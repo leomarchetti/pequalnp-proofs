@@ -112,48 +112,59 @@ Everything lives in [reduction-pipeline/](reduction-pipeline/). The scripts expe
 - Run the workers as persistent background processes writing logs, and have monitors only tail those logs.
 - Before trusting a change, run the end-to-end dry test: splice every armed child into a fake skeleton and build it, run two concurrent `lake build`s, and run `DRY=1 fastsubmit.sh` with three untracked files present.
 
-## Wave racer for small `Represents` steps (November 26, 2026)
+## Wave racer for small circuit FIND steps (November 26, 2026)
 
-`wave-racer/` sends a checked circuit for a new small circuit FIND step within about a minute of the step appearing. It takes three kinds of step:
+`wave-racer/` proves small circuit FIND steps as soon as they appear. It leases each step from the desk as already proved, then sends the PR with the lease.
+
+**Kinds of step it takes**, matched exactly against the statement:
 - `Represents` on a `k`×`k` grid, `k` ≤ 5, with NOT;
 - `RepSizeAtMost` on an `n`×`m` grid, AND and OR only. Its proof starts with `unfold PEqualNP.Represents.RepSizeAtMost`;
 - pair functions, with NOT (`FanInTwo`) or monotone (`Monotone2`): `∀ i j : Fin n, C.eval (List.ofFn fun k => decide (k = i ∨ k = j)) = MASK.testBit (n * min i j + max i j)`. They are solved from the `n(n+1)/2` rows as a `care:` file.
 
-All three file templates passed `lake env lean` on real steps. The first version knew only the `Represents` shape and missed a wave of 165 pair and `RepSizeAtMost` steps (weight 50–60) that others raced from about 15:50 UTC on November 26. At that point 974 steps of the three kinds were open.
+All three file templates passed `lake env lean` on real steps. Each proof is `refine ⟨witness, ?_, by decide, by decide +kernel⟩` and `simp [FanInTwo or Monotone2, witness]`, with the witness in a `.Helpers` namespace and the step's statement verbatim.
 
-**Why it exists.** These steps arrive in waves, mostly 5×5 at size bound 8–10, weight 100 each. One wave ran about 20 new steps a minute for 25 minutes (14:03–14:27 UTC on November 26). The steps show up in `gaps.json` with `offerable_now` unset, before `next` offers them.
+**How it runs.**
+- **Polling:** reads `gaps.json` every 15 s (the file has `max-age=30`). Skips steps of weight under 20: weight-1 steps get "stood down" and their PRs are closed unchecked. Skips steps the snapshot already shows with a PR, but looks at them again if they come back open with no PR.
+- **Solving:** each set of new steps gets its own WSL batch (`wave_solve2.sh`), so waves never wait for each other. SAT exact synthesis runs 16 at a time (8 cores, 16 threads) in two stages, every step 3 s then the rest 20 s, heaviest and newest first. Every circuit is verified in Python on all the rows the statement asks about. Steps still unsolved get one 150 s pass, 4 at a time at the lowest CPU priority.
+- **Sending:** two sender threads, each with its own spare worktree. For each solved step:
+  1. Check the step against the latest snapshot: gone means proved or closed; a PR means someone sent first.
+  2. Wait for GitHub capacity, then lease the step with `GET /desk/next?handle=…&value=1&gap=<id>&have=proof&model=…`. The answer carries `lease.id` and `lease.terms.points`, the price frozen into the lease. Asking again for a step you already hold returns the same lease. With no lease the step is skipped, or tried once more if the desk names a time within 30 minutes.
+  3. Commit one file on a branch named after the step, cut from upstream main, and push it to the fork.
+  4. Open the PR with `Lease: <id>` in its description.
+  5. `POST /desk/release?lease=…&reason=submitted`.
 
-A group of fast contributors opens a PR for every step they can solve, 2–3 minutes after the step appears. They send without a lease, about 3 s apart. A lease does not protect a step: a lease holder's PR lost to one sent without a lease six minutes earlier.
+  Any failure after the lease releases it with reason `other`.
+- **Limits:**
+  - desk calls at least 4 s apart; a 429 pauses desk calls (not the racer) for the time it names;
+  - at most 400 PRs in any rolling hour, counting PRs already sent;
+  - a GitHub "submitted too quickly" answer pauses PRs for 15 minutes, renews the lease, then retries once.
+- **State and logs:** `state.json` records each step, so no step is ever sent twice. `sent2.tsv` logs every PR: time, step, PR number, mode (`lease` or `leaseless`), lease price, weight and kind.
 
-On November 26 these contributors raced about 30–120 such steps an hour, with about 380 in the 14:00 hour, and merged about 60% of them. The rest stay open and are probably false at their bound. The lease-first flow with a 60 s submit spacing loses every one of these races.
+**What we learned on November 26**:
+- **Lease first.** join.txt: a proof of a unit you did not take "earns only the floor of 10 points". A leased unit earns its lease price; a 5×5 step with weight 100 was leased at 42. join.txt also asks for no PRs that are "not a proof of a unit you hold" and at most "one request every few seconds" to the desk.
+- **The first version sent without leases.** It sent 500 PRs between 16:01 and 16:36 UTC, 245 of the 281 we could match being the first PR on their step, so they earn 10 points each at most. They stay open as the lease-less sample for comparing the two modes.
+- **The desk's limit.** `/desk/step` answered 429 at about one request every 2 s, with no pause notice afterwards. The racer now uses the snapshot for its last check and leaves the desk for leases only.
+- **GitHub's limit.** GitHub refused PR creation ("was submitted too quickly") after exactly 500 PRs in 35 minutes.
+- **Neither the desk nor the snapshot sees new PRs at once.** Both showed a step with no PR while two rivals' PRs already existed.
+- **The new kinds came in large numbers.** About 165 pair and `RepSizeAtMost` steps (weight 50–60) appeared from about 15:50 UTC, and by 16:00 2,951 steps of the three kinds were open. An earlier wave of 5×5 steps (14:03–14:27 UTC) ran about 20 new steps a minute, raced by several bots that sent without leases 2–3 minutes after each step appeared.
 
-**What it does.**
-- **Polling:** reads `gaps.json` every 15 s. The file has `max-age=30`.
-- **Fast pass:** each set of steps it has not seen before starts its own WSL batch (`wave_solve2.sh`) at once, so a new wave never waits for an earlier one. Steps get AND/OR/NOT SAT searches 16 at a time (8 cores, 16 threads) in two stages. First every step gets 3 s, then the steps still unsolved get 20 s. Results stream back one line per step. In one replayed wave of 23 steps, solve times at 8 at a time were 0.3–18 s for the 7 solvable steps, and the 16 others used their full budget. In arrival order with 8 slots, an easy step could wait 40–60 s behind hard ones. Staged, the easy ones came back at 2–4 s and the others at 20–24 s. Each circuit is verified on the `k²` one-hot inputs in Python and queued for sending as soon as it is found.
-- **Slow pass:** steps the fast pass leaves UNKNOWN get one 150 s pass, 4 at a time at the lowest CPU priority, one batch at a time.
-- **Sending:** one sender thread does all git work and PRs. Right before sending it asks the desk `/desk/step?gap=`:
-  - `open` or `leased`: send;
-  - `pr_open`: send only while every rival PR is younger than 45 s;
-  - `not_open`: look again every 10 s, up to 6 times. A step that has just appeared answers `not_open` for a short while; the first version dropped a step it had solved ahead of everyone because of this;
-  - anything else: skip.
-- **The PR:** the branch, named after the step, is cut from upstream main in a spare worktree and holds one file: the step's imports, the witness in a `.Helpers` namespace, and the theorem with the step's statement verbatim. The proof is `refine ⟨witness, ?_, by decide, by decide +kernel⟩` and `simp [FanInTwo, witness]`. The branch is pushed to the fork and the PR opens at least 3 s after the previous one.
+**How the checker orders PRs.** join.txt says PRs "are checked in the order they arrive", and "when many arrive the queue can take hours". What we measured:
+- **Throughput:** the site's `head.json` counters showed 456 checks in the last hour, while about 3,700 PRs were opened between 15:30 and 16:40 UTC. The backlog is several hours.
+- **Not strictly by arrival:** among merged PRs, 16% of pairs were merged out of creation order.
+- **Progress clusters by step range:** steps 21100–21399 and 22000–22399 were being merged while 21500–21999, which arrived earlier and are the same kind as 22000–22399, had 0 of about 800 merged.
+- **A lease doesn't speed up the check:** others' lease-less PRs merged at the same or a higher rate than leased ones.
 
-The racer skips a step that the snapshot already shows with a PR, because by then that PR is older than the race window. It looks at the step again if the step later shows up open with no PR. Within a batch, steps go heaviest first, then newest. On November 26 rival PRs were waiting 12–25 minutes for their check, so the desk's queue, not the solver, decided how fast a race ended.
+This looks like several FIFO queues split by some property of the step, but the rule is not published.
 
-Each step is sent at most once (`state.json`), which keeps the racer clear of the desk's pause for re-sending to closed steps. On its first start the racer records every open step as old and skips it.
-
-The racer exits on any of these:
-- a `STOP` file on upstream main;
-- a 429 from the desk;
-- a GitHub rate-limit answer.
+**Data for comparing the modes.** The site's export at `https://data.pequalnp.com/` (start from `head.json`, which names the other files) has `contributors`, listing each handle's accepted lemmas with their points. Join it with `sent2.tsv` on the step id to get merges and points per mode.
 
 **Setup.**
-- Set `PNP_GH` (your login), `PNP_RACE_WSL_DIR` and optionally `PNP_ROOT` and `PNP_RACE_WT`.
-- Add the worktree with `git worktree add --detach ../pnp-race FETCH_HEAD`.
+- Set `PNP_GH` (your login), `PNP_RACE_WSL_DIR` and optionally `PNP_ROOT`.
+- Add two worktrees next to the checkout: `git worktree add --detach ../pnp-race FETCH_HEAD`, and the same for `../pnp-race2`.
 - `synth_sat3.py` and CaDiCaL must be in `~/ns` in WSL.
-- `--selftest` solves a known 5×5 instance at bound 8 and builds the file with `lake env lean`. It took 2.2 s to solve and 7 s to build.
+- `--selftest` solves open steps of each kind and builds their files with `lake env lean` without sending.
 
-**Not covered.** The leftover steps nobody solves need an exhaustive search (`repsearch` above) or a lower-bound proof. The racer does not try them beyond the 150 s pass.
+**Not covered.** Steps nobody solves need an exhaustive search (`repsearch` above) or a lower-bound proof.
 
 ## The `L_meta_1673` search engine lane, and an alert for it (November 26, 2026)
 
