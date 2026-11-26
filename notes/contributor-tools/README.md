@@ -114,7 +114,12 @@ Everything lives in [reduction-pipeline/](reduction-pipeline/). The scripts expe
 
 ## Wave racer for small `Represents` steps (November 26, 2026)
 
-`wave-racer/` sends a checked circuit for a new `k`×`k` `Represents` FIND step (`k` ≤ 5) within about a minute of the step appearing.
+`wave-racer/` sends a checked circuit for a new small circuit FIND step within about a minute of the step appearing. It takes three kinds of step:
+- `Represents` on a `k`×`k` grid, `k` ≤ 5, with NOT;
+- `RepSizeAtMost` on an `n`×`m` grid, AND and OR only. Its proof starts with `unfold PEqualNP.Represents.RepSizeAtMost`;
+- pair functions, with NOT (`FanInTwo`) or monotone (`Monotone2`): `∀ i j : Fin n, C.eval (List.ofFn fun k => decide (k = i ∨ k = j)) = MASK.testBit (n * min i j + max i j)`. They are solved from the `n(n+1)/2` rows as a `care:` file.
+
+All three file templates passed `lake env lean` on real steps. The first version knew only the `Represents` shape and missed a wave of 165 pair and `RepSizeAtMost` steps (weight 50–60) that others raced from about 15:50 UTC on November 26. At that point 974 steps of the three kinds were open.
 
 **Why it exists.** These steps arrive in waves, mostly 5×5 at size bound 8–10, weight 100 each. One wave ran about 20 new steps a minute for 25 minutes (14:03–14:27 UTC on November 26). The steps show up in `gaps.json` with `offerable_now` unset, before `next` offers them.
 
@@ -132,6 +137,8 @@ On November 26 these contributors raced about 30–120 such steps an hour, with 
   - `not_open`: look again every 10 s, up to 6 times. A step that has just appeared answers `not_open` for a short while; the first version dropped a step it had solved ahead of everyone because of this;
   - anything else: skip.
 - **The PR:** the branch, named after the step, is cut from upstream main in a spare worktree and holds one file: the step's imports, the witness in a `.Helpers` namespace, and the theorem with the step's statement verbatim. The proof is `refine ⟨witness, ?_, by decide, by decide +kernel⟩` and `simp [FanInTwo, witness]`. The branch is pushed to the fork and the PR opens at least 3 s after the previous one.
+
+The racer skips a step that the snapshot already shows with a PR, because by then that PR is older than the race window. It looks at the step again if the step later shows up open with no PR. Within a batch, steps go heaviest first, then newest. On November 26 rival PRs were waiting 12–25 minutes for their check, so the desk's queue, not the solver, decided how fast a race ended.
 
 Each step is sent at most once (`state.json`), which keeps the racer clear of the desk's pause for re-sending to closed steps. On its first start the racer records every open step as old and skips it.
 
