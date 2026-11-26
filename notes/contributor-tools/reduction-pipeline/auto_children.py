@@ -13,6 +13,9 @@ BASH = 'C:/Program Files/Git/bin/bash.exe'
 git_lock = threading.Lock()
 
 def norm(s):
+    # canonicalise numeral type ascriptions: (13 : ℕ) -> 13, then (1 : Fin 13) -> 1
+    s = re.sub(r'\((\d+) : ℕ\)', r'\1', s)
+    s = re.sub(r'\((\d+) : Fin (\d+)\)', r'\1', s)
     s = re.sub(r'\bx\d+\b', 'X', s)
     s = re.sub(r'\bj\b', 'X', s)
     return re.sub(r'[\s()]', '', s)

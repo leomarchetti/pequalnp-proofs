@@ -17,7 +17,11 @@ WORK = '.pnp/gen/live'
 os.makedirs(WORK, exist_ok=True)
 
 def norm(s):
-    s = re.sub(r'\bx\d+\b', 'X', s); s = re.sub(r'\bj\b', 'X', s)
+    # canonicalise numeral type ascriptions: (13 : ℕ) -> 13, then (1 : Fin 13) -> 1
+    s = re.sub(r'\((\d+) : ℕ\)', r'\1', s)
+    s = re.sub(r'\((\d+) : Fin (\d+)\)', r'\1', s)
+    s = re.sub(r'\bx\d+\b', 'X', s)
+    s = re.sub(r'\bj\b', 'X', s)
     return re.sub(r'[\s()]', '', s)
 
 def say(*a): print(time.strftime('%H:%M:%S'), *a, flush=True)
