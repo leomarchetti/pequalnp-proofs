@@ -148,6 +148,31 @@ The racer exits on any of these:
 
 **Not covered.** The leftover steps nobody solves need an exhaustive search (`repsearch` above) or a lower-bound proof. The racer does not try them beyond the 150 s pass.
 
+## The `L_meta_1673` search engine lane, and an alert for it (November 26, 2026)
+
+Trey Kind's `L_meta_1673` (PR 6929, Apache-2.0: credit it when you copy it) is a search engine that Lean's kernel checks. It proves circuit lower bounds for small functions. By November 26, 214 proofs on main copied it: 120 from one contributor, the rest from about a dozen others.
+
+They come in four shapes:
+
+| Shape | Proofs |
+|---|---|
+| Gate-list lower bounds | 102 |
+| Graph-function lower bounds (`HasCircuitSize n (OR of edges) t → c ≤ t`) | 61 |
+| "Monotone2 suffices" for one function | 22 |
+| First-gate structure | 20 |
+
+Each proof is 3,700–7,400 lines and pays 58–100 or more. Each also carries data specific to its instance: hex bitmasks (`AA`, `HX`, `HY`), tables of implications for each case, and `chk … = false` checks with tuned masks. The program that computes that data is not public. Using the engine means re-implementing its search outside Lean, which we judged to be several hours of work.
+
+The lane comes in families:
+- about 210 of these proofs merged between November 25 15:00 and November 26 02:00 UTC;
+- one merged in the twelve hours after that;
+- on November 26 afternoon, no open step of these shapes had weight ≥ 20, except `L-meta-9333`. That step claims Monotone2 suffices for every monotone 5-variable function, which would need on the order of a hundred certificates.
+
+`wave-racer/engine_alert.py` watches for the next family:
+- It reads `gaps.json` every 60 s and matches open steps of weight ≥ 20 against the four shapes plus any statement ending in `→ c ≤ t/s/C.size`. These patterns match all 206 engine statements extracted from main.
+- On its first start it records what is already open.
+- It writes new hits to `engine_alerts.log` and exits after the first snapshot with hits, so a background runner is told. Start it again to keep watching.
+
 ## pcx short refutations
 
 [pcx-sat/](pcx-sat/) has a SAT encoder for "PHP(m,n) has a resolution refutation with exactly D derived lines" (`enc.py`), a decoder with an independent re-check (`dec.py`), a lemma combiner (`combine.py`) and a Lean emitter in the merged `L_pcx_155` style (`emit.py`, `header.lean`). `example_php43_58lines.lean` is the checked 58-line PHP(4,3) proof. Pass `--modelalllits=true` to CaDiCaL 3.1. The 55-line searches ran 25–45 minutes without an answer.
