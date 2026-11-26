@@ -175,6 +175,27 @@ This looks like several FIFO queues split by some property of the step, but the 
 
 **Not covered.** Steps nobody solves need an exhaustive search (`repsearch` above) or a lower-bound proof.
 
+## What gets a handle paused, and how not to (November 26, 2026)
+
+The desk pauses a whole handle for about an hour with the message "its agent sent the same proof again and again. Fix the loop (renew the lease before sending; a 410 means the step was proved first)". During the pause every lease and `next` request is refused. PRs already sent keep being checked and merged.
+
+**The cause is PRs for steps that already have an earlier PR from another account.** It applies even when every PR carries a lease and even when you never send twice for one step. The evidence:
+- The wave racer sent 871 PRs between 16:01 and 19:10 UTC, to 871 distinct steps. 667 of them (77%) were behind an earlier rival PR: 306 of 500 sent without a lease and 361 of 371 sent with one.
+- The handle was paused at 19:10 UTC and again at 21:53 UTC. The second 429 carried the message above, after one desk call in the previous 100 minutes, so it was not a rate limit.
+- Another account reported the same in [discussion #31405](https://github.com/open-goat/pequalnp-proofs/discussions/31405): 42 leased PRs, each behind an earlier rival PR, nothing retried, and a pause at 16:01 UTC.
+
+The desk does not publish its counting rule. Our duplicates were being closed as "proved first" steadily from 18:10, and each pause came while those closures piled up.
+
+**Why the obvious checks miss it.** When the checker queue is hours long, the snapshot's `pr_open` and the desk's `/desk/step` lag far behind GitHub. Both showed "open, no PR" for steps with rival PRs 20 or more minutes old, and the desk still granted leases. For example, L-meta-23858 had a rival PR at 16:48 and we leased it at 17:09. A lease does not put you ahead of a PR already sent: the first PR that passes the check merges.
+
+**Guards in the wave racer:**
+- **GitHub is the only source of truth for "someone already sent".** A thread keeps the titles of the newest 1,000 PRs current every 30 s (GraphQL, newest first, stopping at a known PR number). A step not in that list gets a title search (`in:title L-meta-N`) before anything is built or leased. Any existing PR means skip.
+- **Never send twice for one step**, and never after an answer of not open, STOP, proved first or withdrawn (`state.json`).
+- **On a 429:** stop all desk calls for the time it names, save the end time to `desk_pause.txt` so a restart honours it, and log the 429's body. This time the real reason only surfaced because the desk repeated it in the reply to a lease request.
+- **Pace desk calls 7 s or more apart:** the first pause came after about 627 calls in an hour.
+
+**What the pauses cost.** About three hours without a single PR (19:10–22:51 UTC). That included the hour's queue of roughly 340 solved steps, which others proved meanwhile, and the waves of about 400 new steps that arrived from 21:53.
+
 ## The `L_meta_1673` search engine lane, and an alert for it (November 26, 2026)
 
 Trey Kind's `L_meta_1673` (PR 6929, Apache-2.0: credit it when you copy it) is a search engine that Lean's kernel checks. It proves circuit lower bounds for small functions. By November 26, 214 proofs on main copied it: 120 from one contributor, the rest from about a dozen others.

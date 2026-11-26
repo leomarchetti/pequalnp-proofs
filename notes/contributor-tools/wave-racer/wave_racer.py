@@ -209,10 +209,55 @@ def desk_call(method, path, params):
                 ra = int(body.get('retry_after_s') or e.headers.get('Retry-After') or 600)
                 DESK_PAUSED_UNTIL[0] = time.time() + ra
                 with open(DIR + '/desk_pause.txt', 'w') as f: f.write('%.0f' % DESK_PAUSED_UNTIL[0])   # survives a restart
-                say('desk answered 429; all desk calls paused for %d s' % ra)
+                say('desk answered 429; all desk calls paused for %d s: %s' % (ra, re.sub(r'[^ -~]', ' ', str(body.get('error') or body.get('say') or body))[:300]))
             return e.code, body
         except Exception as e:
             return 0, {'error': repr(e)[:200]}
+
+GH_PRS = {}            # step id -> (PR number, author) for every PR GitHub shows on that step (titles like L-meta-123)
+GH_READY = threading.Event()
+
+def gh_watch():
+    """Keep GH_PRS current from GitHub itself: the snapshot's pr_open and the desk lag far behind when the checker queue
+    is hours long, and sending a PR for a step that already has one got the handle paused ("sent the same proof again
+    and again"). First fill: the newest 1000 PRs; then every 30 s the newest pages until a known PR number."""
+    known_max = 0
+    while not STOP.is_set():
+        cursor, pages, top = None, 0, known_max
+        while pages < (10 if not GH_READY.is_set() else 5):
+            after = (', after: "%s"' % cursor) if cursor else ''
+            q = ('query { repository(owner: "open-goat", name: "pequalnp-proofs") { pullRequests(first: 100%s, '
+                 'orderBy: {field: CREATED_AT, direction: DESC}) { pageInfo { endCursor hasNextPage } '
+                 'nodes { number title author { login } } } } }' % after)
+            rc, out = run(['gh', 'api', 'graphql', '-f', 'query=' + q], cwd=ROOT, timeout=60)
+            try: pr = json.loads(out)['data']['repository']['pullRequests']
+            except Exception: say('GitHub PR list failed:', out[:150]); break
+            stop_here = False
+            for n in pr['nodes']:
+                top = max(top, n['number'])
+                if n['number'] <= known_max: stop_here = True
+                m = re.match(r'^(?:Prove )?(L-[a-z]+-\d+)\s*$', (n.get('title') or '').strip())
+                if m and m.group(1) not in GH_PRS: GH_PRS[m.group(1)] = (n['number'], (n.get('author') or {}).get('login'))
+            pages += 1; cursor = pr['pageInfo']['endCursor']
+            if stop_here or not pr['pageInfo']['hasNextPage']: break
+        known_max = top
+        if not GH_READY.is_set(): GH_READY.set(); say('GitHub PR titles loaded: %d steps have a PR' % len(GH_PRS))
+        STOP.wait(30)
+
+def gh_has_pr(gid):
+    """(number, author) of a PR GitHub shows on this step, or None. The newest-PR list covers fresh steps; an older
+    step is looked up once by a title search (the search index lags about a minute, which the list covers)."""
+    if gid in GH_PRS: return GH_PRS[gid]
+    q = ('query { search(query: "repo:open-goat/pequalnp-proofs is:pr in:title %s", type: ISSUE, first: 20) '
+         '{ nodes { ... on PullRequest { number title author { login } } } } }' % gid)
+    rc, out = run(['gh', 'api', 'graphql', '-f', 'query=' + q], cwd=ROOT, timeout=60)
+    try: nodes = json.loads(out)['data']['search']['nodes']
+    except Exception: return None
+    for n in nodes:
+        m = re.match(r'^(?:Prove )?(L-[a-z]+-\d+)\s*$', (n.get('title') or '').strip())
+        if m and m.group(1) == gid:
+            GH_PRS[gid] = (n['number'], (n.get('author') or {}).get('login')); return GH_PRS[gid]
+    return None
 
 def lease(gid):
     """-> (lease id, points, None) or (None, None, (why, retry_after_s))"""
@@ -289,6 +334,10 @@ class Sender:
         pr = str(now['g'].get('pr_open'))
         if pr not in ('0', 'None'):
             say(gid, 'late: the snapshot shows %s PR(s)' % pr); return 'late'
+        GH_READY.wait()
+        has = gh_has_pr(gid)
+        if has:   # someone (or we) already sent a PR: a second one only counts as a re-send
+            say(gid, 'late: GitHub already has PR #%s by %s' % has); return 'late'
         gh_capacity_wait()   # never hold a lease while GitHub would refuse the PR
         if now['g'].get('held_now') and not step.get('held_retried'):   # someone holds it: no desk call now
             step['held_retried'] = True
@@ -456,6 +505,7 @@ def main():
             if time.time() - t < 3600: PR_TIMES.append(t)
     except FileNotFoundError: pass
     say('PRs sent in the last hour: %d (cap %d)' % (len(PR_TIMES), PR_HOUR_CAP))
+    threading.Thread(target=gh_watch, daemon=True).start()
     senders = [Sender(wt) for wt in WTS]
     for s_ in senders: threading.Thread(target=s_.loop, daemon=True).start()
     sender = senders[0]
