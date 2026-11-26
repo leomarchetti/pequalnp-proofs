@@ -1,0 +1,75 @@
+{
+  "ok": true,
+  "tt_hex": "eeeaeaeaeeaac880",
+  "c_mono": 9,
+  "target_bin_lb": 8,
+  "total_dag_states": 93,
+  "num_certs": 9,
+  "out_wire": 14,
+  "mono_gates": [[0, 1, 2], [1, 0, 6], [1, 6, 4], [0, 1, 3], [1, 0, 9], [1, 9, 5], [0, 7, 11], [0, 10, 8], [1, 12, 13]],
+  "certs": [
+    {
+      "sidx": 258, "z": 36, "o": 2, "d": "000000000c0c0c0c", "g": "ffaaaa00ffaaaa00", "ess": 25, "lb": 4, "by_count": false,
+      "ess_pairs": [[0, 8, 9], [3, 1, 9], [4, 1, 17]],
+      "sep_pairs": [[9, 1], [9, 8], [17, 1], [17, 16], [24, 8], [24, 16]],
+      "children": [],
+      "levels": [[], [], [], [["0xaaaaaaaaaaaaaaaa", "0xff00ff00ff00ff00", "0xffff0000ffff0000"]]]
+    },
+    {
+      "sidx": 306, "z": 36, "o": 8, "d": "000000000f000f00", "g": "eeee8888eeee8888", "ess": 19, "lb": 4, "by_count": false,
+      "ess_pairs": [[0, 2, 3], [1, 1, 3], [4, 1, 17]],
+      "sep_pairs": [[3, 1], [3, 2], [17, 1], [17, 16], [18, 2], [18, 16]],
+      "children": [],
+      "levels": [[], [], [], [["0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xffff0000ffff0000"]]]
+    },
+    {
+      "sidx": 330, "z": 48, "o": 2, "d": "000000000000cccc", "g": "faa0faa0faa0faa0", "ess": 13, "lb": 4, "by_count": false,
+      "ess_pairs": [[0, 4, 5], [2, 1, 5], [3, 1, 9]],
+      "sep_pairs": [[5, 1], [5, 4], [9, 1], [9, 8], [12, 4], [12, 8]],
+      "children": [],
+      "levels": [[], [], [], [["0xaaaaaaaaaaaaaaaa", "0xf0f0f0f0f0f0f0f0", "0xff00ff00ff00ff00"]]]
+    },
+    {
+      "sidx": 249, "z": 32, "o": 2, "d": "00000000cccccccc", "g": "ffaafaa0ffaafaa0", "ess": 29, "lb": 5, "by_count": false,
+      "ess_pairs": [[0, 4, 5], [2, 1, 5], [3, 1, 9], [4, 1, 17]],
+      "sep_pairs": [],
+      "children": [258],
+      "levels": [[], [], [], [], []]
+    },
+    {
+      "sidx": 252, "z": 36, "o": 0, "d": "000000000f0f0f0f", "g": "eeaa8800eeaa8800", "ess": 27, "lb": 5, "by_count": false,
+      "ess_pairs": [[0, 10, 11], [1, 9, 11], [3, 3, 11], [4, 1, 17]],
+      "sep_pairs": [],
+      "children": [258],
+      "levels": [[], [], [], [], []]
+    },
+    {
+      "sidx": 297, "z": 32, "o": 8, "d": "00000000ff00ff00", "g": "eeeec8c8eeeec8c8", "ess": 23, "lb": 5, "by_count": false,
+      "ess_pairs": [[0, 2, 3], [1, 1, 3], [2, 2, 6], [4, 1, 17]],
+      "sep_pairs": [],
+      "children": [306],
+      "levels": [[], [], [], [], []]
+    },
+    {
+      "sidx": 324, "z": 48, "o": 0, "d": "000000000000ffff", "g": "c880c880c880c880", "ess": 15, "lb": 5, "by_count": false,
+      "ess_pairs": [[0, 6, 7], [1, 5, 7], [2, 3, 7], [3, 3, 11]],
+      "sep_pairs": [],
+      "children": [330],
+      "levels": [[], [], [], [], []]
+    },
+    {
+      "sidx": 243, "z": 32, "o": 0, "d": "00000000ffffffff", "g": "eeaac880eeaac880", "ess": 31, "lb": 7, "by_count": false,
+      "ess_pairs": [[0, 6, 7], [1, 5, 7], [2, 3, 7], [3, 3, 11], [4, 1, 17]],
+      "sep_pairs": [[7, 3], [7, 5], [7, 6], [7, 10], [7, 13], [7, 22], [7, 28], [11, 3], [11, 9], [11, 10], [11, 13], [11, 22], [11, 28], [14, 6], [14, 10], [14, 12], [14, 13], [14, 22], [14, 28], [15, 13], [17, 1], [17, 3], [17, 13], [17, 16], [17, 28], [19, 3], [23, 22], [26, 10], [26, 18], [26, 24], [29, 13], [29, 28], [30, 22], [30, 28]],
+      "children": [249, 252, 258, 297, 306, 324, 330],
+      "levels": [[], [], [["0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xffffc0c0ffffc0c0"], ["0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xffffd0d0ffffd0d0"], ["0xaaaa8888aaaa8888", "0xcc00cc00cc00cc00", "0xfffff0f0fffff0f0"]], [["0x5a5a5a5a5a5a5a5a", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff50f0ffff50f0"], ["0x55aa55aa55aa55aa", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xffffc0c0ffffc0c0"], ["0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xff00ff00ff00ff00", "0xffffc0c0ffffc0c0"], ["0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xcccccccccccccccc", "0xffffc0c0ffffc0c0"], ["0xcc00cc00cc00cc", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xffffc0c0ffffc0c0"], ["0x3300330033003300", "0xaaaaaaaaaaaaaaaa", "0xff00ff00ff00ff00", "0xffffc0c0ffffc0c0"], ["0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xffff0000ffff0000", "0xffffc0c0ffffc0c0"], ["0xaaaaaaaaaaaaaaaa", "0xc0c0c0c0c0c0c0c0", "0xcc00cc00cc00cc00", "0xffffc0c0ffffc0c0"], ["0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffffc0c0ffffc0c0"], ["0xc0c00000c0c0", "0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xffff0000ffff0000"], ["0x3f3f00003f3f0000", "0xaaaaaaaaaaaaaaaa", "0xc0c0c0c0c0c0c0c0", "0xcc00cc00cc00cc00"], ["0xaaaaaaaaaaaaaaaa", "0xc0c0c0c0c0c0c0c0", "0xcc00cc00cc00cc00", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xd0d0d0d0d0d0d0d0", "0xffff0000ffff0000"], ["0xaaaa8888aaaa8888", "0xcc00cc00cc00cc00", "0xf0f0f0f0f0f0f0f0", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xffffccccffffcccc", "0xfffff0f0fffff0f0"], ["0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xf0f0c0c0f0f0c0c0", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xccccc0c0ccccc0c0", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xeeeecccceeeecccc", "0xff00ff00ff00ff00", "0xfffff0f0fffff0f0"], ["0x5500ff005500ff00", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xfffff0f0fffff0f0"], ["0xf0ff0f00f0ff0f0", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00"]], [["0x8888888888888888", "0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xf0f0f0f0f0f0f0f0", "0xffff0000ffff0000"], ["0x2222222222222222", "0x4444444444444444", "0xf0f0f0f0f0f0f0f0", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xa0a0a0a0a0a0a0a0", "0xcccccccccccccccc", "0xfafafafafafafafa", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xa0a0a0a0a0a0a0a", "0x5050505050505050", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xfaf0faf0faf0faf0", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0x50f050f050f050f0", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xaa00aa00aa00aa00", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xffaaffaaffaaffaa", "0xffff0000ffff0000"], ["0xaa00aa00aa00aa", "0x5500550055005500", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xffff0000ffff0000"], ["0xaaaa0000aaaa", "0x5555000055550000", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xff00ff00ff00ff00"], ["0xaaaa0000aaaa", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xfffff0f0fffff0f0"], ["0xc0c0c0c0c0c0c0c", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xc0c0c0c0c0c0c0c", "0xaaaaaaaaaaaaaaaa", "0xc0c0c0c0c0c0c0c0", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffffc0c0ffffc0c0"], ["0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000", "0xffffc0c0ffffc0c0"], ["0xaaaaaaaaaaaaaaaa", "0xc0c0c0c0c0c0c0c0", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffffc0c0ffffc0c0"], ["0xc0c00000c0c0", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0x3f3f00003f3f0000", "0xaaaaaaaaaaaaaaaa", "0xc0c0c0c0c0c0c0c0", "0xcccccccccccccccc", "0xff00ff00ff00ff00"], ["0xaaaaaaaaaaaaaaaa", "0xc0c0c0c0c0c0c0c0", "0xcc00cc00cc00cc00", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xc0c0c0c0c0c0c0c0", "0xcc00cc00cc00cc00", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xc0c0c0c0c0c0c0c0", "0xcc00cc00cc00cc00", "0xcccccccccccccccc", "0xffff0000ffff0000"], ["0xcc00cc00cc00cc", "0xaaaaaaaaaaaaaaaa", "0xc0c0c0c0c0c0c0c0", "0xcccccccccccccccc", "0xffff0000ffff0000"], ["0x3300330033003300", "0xaaaaaaaaaaaaaaaa", "0xc0c0c0c0c0c0c0c0", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xc0c0c0c0c0c0c0c0", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000", "0xffff0c0cffff0c0c"], ["0xc0c00000c0c", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xc0c0c0c0c0c0c0c", "0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xcccccccccccccccc", "0xffff0000ffff0000"], ["0xcc00cc00cc00cc", "0xc0c0c0c0c0c0c0c", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xffff0000ffff0000"], ["0x2222222222222222", "0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xf0f0f0f0f0f0f0f0", "0xffff0000ffff0000"], ["0xcc00cc00cc00cc", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xffff0000ffff0000"], ["0xcc00cc00cc00cc", "0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xf0f0f0f0f0f0f0f0", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xf0f0f0f0f0f0f0f0", "0xffff0000ffff0000", "0xffffccccffffcccc"], ["0xcccc0000cccc", "0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xf0f0f0f0f0f0f0f0", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xcccccccccccccccc", "0xffff0000ffff0000", "0xfffff0f0fffff0f0"], ["0xf0f00000f0f0", "0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xcccccccccccccccc", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xffff0000ffff0000"], ["0xcc00cc00cc00cc", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xffff0000ffff0000", "0xfffff0f0fffff0f0"], ["0xf0f00000f0f0", "0xcc00cc00cc00cc", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xffff0000ffff0000"], ["0xaaaa0000aaaa0000", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xfffff0f0fffff0f0"], ["0xaaaaaaaaaaaaaaaa", "0xccccc0c0ccccc0c0", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff000000ff000000", "0xff00ff00ff00ff00", "0xfffff0f0fffff0f0"], ["0xff000000ff00", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xfffff0f0fffff0f0"], ["0xf0f00000f0f0", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xfffff0f0fffff0f0"], ["0xf0f00000f0f0", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xf0f00000f0f00000", "0xff00ff00ff00ff00", "0xfffff0f0fffff0f0"], ["0xaaaaaaaaaaaaaaaa", "0xcccc0c0ccccc0c0c", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000", "0xfffff0f0fffff0f0"], ["0xff000000ff00", "0xff000000ff0000", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0"]], [["0x8888888888888888", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0x4444444444444444", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xfafafafafafafafa", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xa0a0a0a0a0a0a0a", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xaa00aa00aa00aa00", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0x5500550055005500", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xff00ff00ff00ff00", "0xffff0000ffff0000", "0xffffaaaaffffaaaa"], ["0xaaaa0000aaaa", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xc0c0c0c0c0c0c0c0", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xc0c0c0c0c0c0c0c", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcc00cc00cc00cc00", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xcc00cc00cc00cc", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xffff0000ffff0000"], ["0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000", "0xfffff0f0fffff0f0"], ["0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xff00ff00ff00ff00", "0xffff0000ffff0000", "0xfffff0f0fffff0f0"], ["0xf0f00000f0f0", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xff00ff00ff00ff00", "0xffff0000ffff0000"], ["0xff000000ff00", "0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xff00ff00ff00ff00", "0xffff0000ffff0000"]], [["0xaaaaaaaaaaaaaaaa", "0xcccccccccccccccc", "0xf0f0f0f0f0f0f0f0", "0xff00ff00ff00ff00", "0xffff0000ffff0000"]]]
+    },
+    {
+      "sidx": 0, "z": 0, "o": 0, "d": "ffffffffffffffff", "g": "eeeaeaeaeeaac880", "ess": 63, "lb": 8, "by_count": false,
+      "ess_pairs": [[0, 6, 7], [1, 5, 7], [2, 3, 7], [3, 3, 11], [4, 1, 17], [5, 1, 33]],
+      "sep_pairs": [],
+      "children": [243],
+      "levels": [[], [], [], [], [], [], [], []]
+    }
+  ]
+}

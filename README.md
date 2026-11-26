@@ -63,6 +63,10 @@ The steps by hand:
 
 The full rules for the pull request are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Contributor handoff for this fork
+
+[Strategy and results](notes/contributor-strategy.md), [submission playbook](notes/contributor-playbook.md), and [reusable search tools](notes/contributor-tools/README.md).
+
 ## What the checker requires
 
 1. The file builds with the pinned toolchain and the pinned Mathlib.
