@@ -47,3 +47,21 @@ python3 notes/contributor-tools/search_rectangle_sat.py \
 - [L-meta-17979](examples/checked-17979.lean) proves the wire-bank invariant for OR-only circuits and uses two singletons to rule out an OR-only implementation of a bipartite incidence function. Out-of-range reads are included in the invariant.
 
 These files passed Lean locally. Run `lake env lean ../notes/contributor-tools/examples/checked-17979.lean` from `lean/`, replacing the file name for the other examples. The desk closed these gaps to our submissions while competing PRs were queued.
+
+## Exact small-circuit search (round of November 25–26, 2026)
+
+Two multithreaded exhaustive searches written for this round. Build them in WSL or Linux with the system `g++` (no SAT solver or other install needed):
+
+```bash
+g++ -O3 -march=native -fopenmp -o notsearch notes/contributor-tools/notsearch.cpp
+g++ -O3 -march=native -fopenmp -o repsearch notes/contributor-tools/repsearch.cpp
+```
+
+- `notsearch <table_u32> <size> <mode>` searches 5-input circuits whose truth table is the 32-bit integer (row `i` = bit `i`, input `j` = bit `j` of the row, matching `tableIndex`). Gates are AND2, OR2 and NOT1. Every gate is read later or is the output, and no NOT reads a NOT. Mode `0` also requires some NOT to read a gate (`L-meta-18089`..`18098`). Mode `1` requires some NOT anywhere (`L-meta-17974`..`17976`). Mode `2` allows no NOT, which gives the monotone optimum. It prints `FOUND` with `op a b` lines (op 0 AND, 1 OR, 2 NOT) or `NONE ... nodes`.
+- `repsearch n m <hex relation> <size> <allowNot>` is the same search under `PEqualNP.Represents` semantics. Only inputs with one row and one column on matter, so every wire is a relation on `[n]×[m]` (bit `u*m+v`): row inputs are full rows and column inputs are full columns.
+- `run_notsearch.sh` and `run_repsearch.sh` write results to files. Write to files rather than relying on stdout: output through `wsl.exe` sometimes went missing in this round.
+- `gen_table5_lean.py gaps.json GAP_ID circuit.txt out.lean` renders a `notsearch` witness as the exact `L-meta-18089`-shaped statement. It proves `FanInTwo` by `simp`, `ReadsBack` by unfolding and `decide`, and the finite rest by `decide`. A test rendering checked in about 12 s with `lake env lean`.
+
+**Completeness.** The search requires every gate to be read later or be the output, and it uses a canonical topological order (each gate reads its predecessor or has a larger `(op, a, b)` key). It removes constant and duplicate wires and uses only AND2, OR2 and NOT1. For plain existence questions none of these restrictions loses a solution. In the NOT-on-gate statements, a NOT's ignored second input counts as "read", so a qualifying NOT can be kept alive as the second input of another NOT. Such a circuit drops to a size-(k−1) circuit containing some NOT. So also run mode `1` at size `k-1` before calling a NOT-on-gate gap empty.
+
+**Timings on 16 threads.** For 5 inputs at size 8: about 13 s and 1.6·10⁹ nodes. Size 9: 450–620 s and 6.0·10¹⁰ nodes. Expect each extra gate to cost about 40× more. Size 10 and above wants a SAT encoding instead.

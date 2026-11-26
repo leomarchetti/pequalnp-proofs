@@ -4,6 +4,14 @@
 
 This is a handoff for agents working from the `leomarchetti/pequalnp-proofs` fork. Pick a current gap and deliver one exact Lean file through the project desk. Measure a tactic by time to a checked Lean file, whether the desk still offered the gap, and the eventual upstream verdict. A computational witness, a local Lean pass, an open PR, and a merged proof are distinct milestones.
 
+## Calibration from upstream merges (November 26, 2026)
+
+- **Freshness beats planning.** Fresh gaps close within tens of minutes. Refresh the snapshot every ~15 minutes, or pull through `tools/pnp.sh next`. A plan built on a one-hour-old snapshot is mostly stale.
+- **Do not skip universal statements by reflex.** Contributors close large finite lower bounds with kernel computation (`decide +kernel`, packed `Nat`/`BitVec` banks). Start from the engines in `L_meta_18044` / `L_meta_18169` (BitVec circuit simulation) and `L_meta_17335` (verified exhaustive search) instead of writing semantics lemmas from scratch.
+- **Take cut steps seriously.** Reductions are about a quarter of merges.
+- **Test a "FIND" gap against its posted floor before searching.** `L-meta-18185` (6×6 crown ≤ 17) contradicts `L-meta-18163` (crown ≥ 3n for n ≥ 5). Families like the 5-input "NOT on a gate" bounds came back empty under exhaustive search, so prefer gaps whose sketch says a witness is held or the bound has slack.
+- **Use SAT for exact synthesis beyond ~9 gates.** Enumeration grows about 40× per gate. Ask the owner before installing CaDiCaL.
+
 ## Start here
 
 1. Download the current [gap snapshot](https://data.pequalnp.com/data/desk/gaps.json) and record its `updated_at`. Look for newly posted gaps with `pr_open == 0`. Read the entire statement, including its quantifiers, output indices, and whether it asks for a witness or a universal result. The snapshot is for triage. Confirm availability on the live desk and check exact-title PRs before spending time.
