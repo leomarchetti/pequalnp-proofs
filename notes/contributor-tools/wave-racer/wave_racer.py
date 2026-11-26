@@ -1,19 +1,25 @@
 """Wave racer for plain Represents FIND steps (k <= 5): send a checked circuit within a minute of a step appearing.
 
-Loop: read gaps.json every POLL s. Steps it has not seen before go to WSL as one batch: SAT, AND/OR/NOT, BUDGET1 s
-each, 8 at a time, results streamed back. For each SAT result the circuit is verified in Python, and the desk is asked
-about the step right before sending:
-  - open or leased: send;
-  - pr_open: send only while every competing PR is younger than RACE_WINDOW s;
-  - anything else: skip.
-Send means one Lean file on a branch named after the step, cut from upstream main in the ../pnp-race worktree, pushed
-to the fork, then one PR at least GAP s after the last. Each step is sent at most once (state.json), so we never
-re-send to a closed step. Steps the first pass leaves UNKNOWN get one longer pass (BUDGET2) when no new steps wait.
-Steps already open when the racer first starts are recorded as 'old' and skipped.
-The racer exits on a STOP notice on upstream main, on a 429 from the desk, or on a GitHub rate-limit answer.
+Threads:
+  - poller (main): reads gaps.json every POLL s. Each set of steps it has not seen before starts its own solve batch
+    at once, so a new wave never waits for an earlier one.
+  - solve batches: one WSL call each (wave_solve2.sh): AND/OR/NOT SAT, BUDGET1 s per step, 8 at a time, results
+    streamed back. Each SAT result is verified in Python and queued for sending as soon as it arrives.
+  - retry lane: steps the fast pass left UNKNOWN get one BUDGET2 pass, 4 at a time at the lowest CPU priority, one
+    retry batch at a time.
+  - sender (one thread, so git work and PRs are serial): asks the desk about the step right before sending:
+      open, leased or no answer: send;
+      pr_open: send only while every competing PR is younger than RACE_WINDOW s;
+      not_open (a step that has just appeared): look again every 10 s, up to 6 times;
+      anything else: skip.
+    Send means one Lean file on a branch named after the step, cut from upstream main in the ../pnp-race worktree,
+    pushed to the fork, then one PR at least GAP s after the last.
+Each step is sent at most once (state.json), so we never re-send to a closed step. Steps already open when the racer
+first starts are recorded as 'old' and skipped. The racer exits on a STOP notice on upstream main, on a 429 from
+the desk, or on a GitHub rate-limit answer.
 usage: python -I -X utf8 -u .pnp/race/wave_racer.py [--selftest]
 """
-import json, os, re, subprocess, sys, time, threading, urllib.request, urllib.parse
+import itertools, json, os, queue, re, subprocess, sys, time, threading, urllib.request, urllib.parse, urllib.error
 from datetime import datetime, timezone
 
 ROOT = os.environ.get('PNP_ROOT', os.getcwd())  # the proofs checkout
@@ -25,23 +31,30 @@ UP_URL = 'https://github.com/%s.git' % UP
 ME = os.environ['PNP_GH']  # your GitHub login (the fork's owner)
 SNAP = 'https://data.pequalnp.com/data/desk/gaps.json'
 DESK = 'https://pequalnp.com/desk'
-POLL, BUDGET1, BUDGET2, RACE_WINDOW, GAP = 20, 20, 150, 45, 3
+POLL, BUDGET1, BUDGET2, RACE_WINDOW, GAP = 15, 20, 150, 45, 3
+WAIT_STEP, WAIT_TRIES = 10, 6
 PAT = re.compile(r'^∃ C : PEqualNP\.CircuitLowerBounds\.Circuit, PEqualNP\.MetaComplexity\.FanInTwo C ∧ C\.size ≤ (\d+) ∧ '
                  r'PEqualNP\.Represents\.Represents \(fun u v : Fin (\d+) => \((\d+) : ℕ\)\.testBit \((\d+) \* u\.val \+ v\.val\)\) C$')
+STOP = threading.Event()
+LOG_LOCK, ST_LOCK = threading.Lock(), threading.Lock()
 
 def say(*a):
     line = datetime.now().strftime('%H:%M:%S ') + ' '.join(str(x) for x in a)
-    print(line, flush=True)
-    with open(DIR + '/race.log', 'a', encoding='utf-8') as f: f.write(line + '\n')
+    with LOG_LOCK:
+        print(line, flush=True)
+        with open(DIR + '/race.log', 'a', encoding='utf-8') as f: f.write(line + '\n')
 
 def load_state():
     try: return json.load(open(DIR + '/state.json', encoding='utf-8'))
     except FileNotFoundError: return {}
 
-def save_state(st):
-    tmp = DIR + '/state.json.tmp'
-    json.dump(st, open(tmp, 'w', encoding='utf-8'), indent=0, sort_keys=True)
-    os.replace(tmp, DIR + '/state.json')
+ST = {}
+def mark(gid, v):
+    with ST_LOCK:
+        ST[gid] = v
+        tmp = DIR + '/state.json.tmp'
+        json.dump(ST, open(tmp, 'w', encoding='utf-8'), indent=0, sort_keys=True)
+        os.replace(tmp, DIR + '/state.json')
 
 def snapshot():
     """{id: (k, s, mask, weight, gap)} for open plain Represents steps with k <= 5"""
@@ -58,10 +71,8 @@ def snapshot():
 def ok(k, mask, gates, s):
     n = 2 * k; out = n + len(gates) - 1
     if not gates or len(gates) > s: return False
-    for o, a, b in gates:
-        if o not in (0, 1, 2): return False
     for j, (o, a, b) in enumerate(gates):
-        if not (0 <= a < n + j) or (o != 2 and not (0 <= b < n + j)): return False
+        if o not in (0, 1, 2) or not (0 <= a < n + j) or (o != 2 and not (0 <= b < n + j)): return False
     for u in range(k):
         for v in range(k):
             w = [i == u for i in range(k)] + [j == v for j in range(k)]
@@ -112,6 +123,10 @@ def pr_age(num):
 class Sender:
     def __init__(self):
         self.last = 0.0; self.fetched = 0.0; self.lock = threading.Lock()
+        self.q = queue.PriorityQueue(); self.n = itertools.count()
+
+    def put(self, item, when=0.0):
+        self.q.put((when, next(self.n), item))
 
     def fetch(self):
         with self.lock:
@@ -121,7 +136,26 @@ class Sender:
             if run(['git', 'cat-file', '-e', 'FETCH_HEAD:STOP'])[0] == 0: raise Stop('STOP notice on upstream main')
             self.fetched = time.time()
 
-    def send(self, gid, k, s, gates, g, st):
+    def loop(self):
+        while not STOP.is_set():
+            try: when, n, item = self.q.get(timeout=1)
+            except queue.Empty: continue
+            if when > time.time():
+                self.q.put((when, n, item)); time.sleep(0.5); continue
+            gid, k, s, gates, g, tries = item
+            try:
+                res = self.send(gid, k, s, gates, g)
+            except Stop as e:
+                say('STOP:', e); STOP.set(); return
+            except Exception as e:
+                res = 'error'; say(gid, 'send error:', repr(e)[:200])
+            if res == 'wait':
+                if tries + 1 < WAIT_TRIES:
+                    self.put((gid, k, s, gates, g, tries + 1), time.time() + WAIT_STEP); continue
+                res = 'not_open'; say(gid, 'still not open after %d checks; not sent' % WAIT_TRIES)
+            mark(gid, res)
+
+    def send(self, gid, k, s, gates, g):
         d = desk_state(gid)
         state = d.get('state')
         if state in ('open', 'leased') or state is None:
@@ -129,78 +163,89 @@ class Sender:
         elif state == 'pr_open':
             ages = [pr_age(p) for p in (d.get('prs') or [])]
             if ages and max(ages) > RACE_WINDOW:
-                st[gid] = 'late'; say(gid, 'late: competing PR(s) %s, oldest %.0f s' % (d.get('prs'), max(ages))); return
+                say(gid, 'late: competing PR(s) %s, oldest %.0f s' % (d.get('prs'), max(ages))); return 'late'
             why = 'racing PR(s) %s, oldest %.0f s' % (d.get('prs'), max(ages) if ages else 0)
+        elif state == 'not_open':
+            say(gid, 'desk says not_open; looking again in %d s' % WAIT_STEP); return 'wait'
         else:
-            st[gid] = 'closed:' + str(state); say(gid, 'not sent, desk state', state); return
+            say(gid, 'not sent, desk state', state); return 'closed:' + str(state)
         self.fetch()
         path = g.get('file') or 'lean/PEqualNP/Outside/%s.lean' % gid.replace('-', '_')
         if run(['git', 'cat-file', '-e', 'FETCH_HEAD:' + path])[0] == 0:
-            st[gid] = 'on_main'; say(gid, 'already on main'); return
+            say(gid, 'already on main'); return 'on_main'
         rc, out = run(['git', 'checkout', '-q', '-f', '-B', gid, 'FETCH_HEAD'])
-        if rc: say(gid, 'checkout failed', out[:200]); st[gid] = 'error'; return
+        if rc: say(gid, 'checkout failed', out[:200]); return 'error'
         with open(WT + '/' + path, 'w', encoding='utf-8', newline='\n') as f:
             f.write(lean_file(gid, k, gates, g))
         run(['git', 'add', path])
         rc, out = run(['git', 'commit', '-q', '-m', gid + '\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'])
-        if rc: say(gid, 'commit failed', out[:200]); st[gid] = 'error'; return
+        if rc: say(gid, 'commit failed', out[:200]); return 'error'
         rc, out = run(['git', 'push', '-q', '-f', 'origin', gid], timeout=120)
-        if rc: say(gid, 'push failed', out[:200]); st[gid] = 'error'; return
+        if rc: say(gid, 'push failed', out[:200]); return 'error'
         time.sleep(max(0.0, self.last + GAP - time.time()))
         body = ('A %d-gate circuit (AND, OR, NOT, fan-in two) found by SAT-based exact synthesis; it is checked on all %d '
                 'inputs with one left and one right vertex on.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)'
                 % (len(gates), k * k))
-        st[gid] = 'sending'; save_state(st)
+        mark(gid, 'sending')
         rc, out = run(['gh', 'pr', 'create', '--repo', UP, '--head', '%s:%s' % (ME, gid), '--base', 'main',
                        '--title', gid, '--body', body], timeout=90)
         self.last = time.time()
         url = [l for l in out.splitlines() if l.startswith('https://')]
         if rc or not url:
-            st[gid] = 'pr_failed'; say(gid, 'PR failed:', out[:300])
+            say(gid, 'PR failed:', out[:300])
             if re.search(r'rate limit|too quickly|abuse', out, re.I): raise Stop('GitHub rate limit: ' + out[:200])
-            return
-        st[gid] = 'sent'; say(gid, 'SENT', url[0], '(%s; %d gates, size bound %d)' % (why, len(gates), s))
-        with open(DIR + '/sent.txt', 'a', encoding='utf-8') as f: f.write('%s %s %s\n' % (datetime.now().isoformat(timespec='seconds'), gid, url[0]))
+            return 'pr_failed'
+        say(gid, 'SENT', url[0], '(%s; %d gates, size bound %d)' % (why, len(gates), s))
+        with open(DIR + '/sent.txt', 'a', encoding='utf-8') as f:
+            f.write('%s %s %s\n' % (datetime.now().isoformat(timespec='seconds'), gid, url[0]))
+        return 'sent'
 
-def solve_stream(items, budget):
-    """items: [(gid, k, s, mask)] -> yields (gid, status, gates)"""
-    name = 'batch_%d.txt' % int(time.time())
+def solve_stream(items, budget, par=8, nice=0):
+    """items: [(gid, k, s, mask, ...)] -> yields (gid, status, gates) as each search ends"""
+    name = 'batch_%d_%d.txt' % (int(time.time() * 1000), threading.get_ident() % 10000)
     with open(DIR + '/' + name, 'w', encoding='utf-8', newline='\n') as f:
-        for gid, k, s, mask in items: f.write('%s %d %d %d\n' % (gid.split('-')[-1], k, s, mask))
-    p = subprocess.Popen(['wsl.exe', '-e', 'bash', '-lc', 'bash ~/ns/wave_solve2.sh %s/%s %d' % (WSL_DIR, name, budget)],
+        for it in items: f.write('%s %d %d %d\n' % (it[0].split('-')[-1], it[1], it[2], it[3]))
+    p = subprocess.Popen(['wsl.exe', '-e', 'bash', '-lc', 'bash ~/ns/wave_solve2.sh %s/%s %d %d %d' % (WSL_DIR, name, budget, par, nice)],
                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding='utf-8', errors='replace')
-    byn = {gid.split('-')[-1]: gid for gid, *_ in items}
-    for line in p.stdout:
-        f = line.split()
-        if len(f) < 3 or f[0] != 'RES' or f[1] not in byn: continue
-        gates = []
-        if len(f) > 3:
-            for t in f[3].split(';'):
-                if t: gates.append(tuple(int(x) for x in t.split(',')))
-        yield byn[f[1]], f[2], gates
-    p.wait()
-    try: os.remove(DIR + '/' + name)
-    except OSError: pass
+    byn = {it[0].split('-')[-1]: it[0] for it in items}
+    try:
+        for line in p.stdout:
+            f = line.split()
+            if len(f) < 3 or f[0] != 'RES' or f[1] not in byn: continue
+            gates = [tuple(int(x) for x in t.split(',')) for t in (f[3].split(';') if len(f) > 3 else []) if t]
+            yield byn[f[1]], f[2], gates
+    finally:
+        p.wait()
+        try: os.remove(DIR + '/' + name)
+        except OSError: pass
 
-def run_batch(items, budget, snap, st, sender, retry):
-    say('batch of %d (budget %d s): %s' % (len(items), budget, ' '.join(i[0] for i in items)))
+RETRY = []; RETRY_LOCK = threading.Lock()
+
+def batch(items, budget, sender, par=8, nice=0):
+    """items: [(gid, k, s, mask, weight, gap)]"""
+    info = {it[0]: it for it in items}
+    say('%s of %d (budget %d s): %s' % ('batch' if budget == BUDGET1 else 'retry batch', len(items), budget, ' '.join(info)))
     threading.Thread(target=lambda: _safe(sender.fetch), daemon=True).start()
-    for gid, status, gates in solve_stream(items, budget):
-        k, s, mask, w, g = snap[gid]
-        if status == 'SAT' and ok(k, mask, gates, s):
-            say(gid, 'solved: %d gates (bound %d, weight %d)' % (len(gates), s, w))
-            sender.send(gid, k, s, gates, g, st)
-        elif status == 'UNSAT':
-            st[gid] = 'unsat'; say(gid, 'UNSAT at bound', s)
-        else:
-            if budget == BUDGET1: retry.append(gid); st[gid] = 'retry'
-            else: st[gid] = 'unknown'
-            say(gid, status if status != 'SAT' else 'SAT but failed verification')
-        save_state(st)
+    try:
+        for gid, status, gates in solve_stream(items, budget, par, nice):
+            _, k, s, mask, w, g = info[gid]
+            if status == 'SAT' and ok(k, mask, gates, s):
+                say(gid, 'solved: %d gates (bound %d, weight %d)' % (len(gates), s, w))
+                mark(gid, 'queued'); sender.put((gid, k, s, gates, g, 0))
+            elif status == 'UNSAT':
+                mark(gid, 'unsat'); say(gid, 'UNSAT at bound', s)
+            elif budget == BUDGET1:
+                mark(gid, 'retry')
+                with RETRY_LOCK: RETRY.append(info[gid])
+                say(gid, status if status != 'SAT' else 'SAT but failed verification', '-> retry lane')
+            else:
+                mark(gid, 'unknown'); say(gid, status, 'after the long pass')
+    except Exception as e:
+        say('batch error:', repr(e)[:200])
 
 def _safe(f):
     try: f()
-    except Stop as e: say('STOP (fetch):', e)
+    except Stop as e: say('STOP (fetch):', e); STOP.set()
 
 def selftest():
     """solve one merged 5x5 instance and build its file with lake, to check the template end to end"""
@@ -211,40 +256,46 @@ def selftest():
     t0 = time.time()
     res = list(solve_stream([(gid, 5, 8, 7572604)], BUDGET1))
     say('selftest solve:', res[0][1], len(res[0][2]), 'gates in %.1f s' % (time.time() - t0), 'verified' if ok(5, 7572604, res[0][2], 8) else 'NOT verified')
-    path = os.path.join(DIR, 'L_meta_99999901.lean')
+    path = DIR + '/L_meta_99999901.lean'
     open(path, 'w', encoding='utf-8', newline='\n').write(lean_file(gid, 5, res[0][2], g))
     t0 = time.time()
     rc, out = run(['lake', 'env', 'lean', path], cwd=ROOT + '/lean', timeout=900)
     say('selftest lean: rc', rc, '%.0f s' % (time.time() - t0), out[:400])
+    os.remove(path)
 
 def main():
     subprocess.run(['wsl.exe', '-e', 'bash', '-lc', "sed 's/\\r$//' %s/wave_solve2.sh > ~/ns/wave_solve2.sh" % WSL_DIR])
     if '--selftest' in sys.argv: selftest(); return
-    st = load_state(); sender = Sender(); retry = []
+    ST.update(load_state())
+    sender = Sender()
+    threading.Thread(target=sender.loop, daemon=True).start()
     snap = snapshot()
-    if not st:
-        for gid in snap: st[gid] = 'old'
-        save_state(st); say('first start: %d open steps recorded as old' % len(snap))
-    retry += [gid for gid, v in st.items() if v == 'retry' and gid in snap]
-    say('racer up: %d open Represents steps (k<=5), %d to retry' % (len(snap), len(retry)))
-    while True:
+    if not ST:
+        for gid in snap: mark(gid, 'old')
+        say('first start: %d open steps recorded as old' % len(snap))
+    for gid, v in list(ST.items()):  # interrupted searches go to the retry lane; 'sending' is never repeated
+        if v in ('retry', 'solving', 'queued') and gid in snap:
+            RETRY.append((gid,) + snap[gid]); mark(gid, 'retry')
+    say('racer up: %d open Represents steps (k<=5), %d to retry' % (len(snap), len(RETRY)))
+    retry_thread = None
+    while not STOP.is_set():
         try:
             snap = snapshot()
         except Exception as e:
-            say('snapshot failed:', str(e)[:120]); time.sleep(POLL); continue
-        new = sorted((gid for gid in snap if gid not in st), key=lambda x: -snap[x][3])
-        try:
-            if new:
-                run_batch([(gid, snap[gid][0], snap[gid][1], snap[gid][2]) for gid in new], BUDGET1, snap, st, sender, retry)
-                continue
-            retry = [gid for gid in retry if gid in snap and st.get(gid) == 'retry']
-            if retry:
-                batch, retry = retry[:8], retry[8:]
-                run_batch([(gid, snap[gid][0], snap[gid][1], snap[gid][2]) for gid in batch], BUDGET2, snap, st, sender, retry)
-                continue
-        except Stop as e:
-            save_state(st); say('STOP:', e); return
-        time.sleep(POLL)
+            say('snapshot failed:', str(e)[:120]); STOP.wait(POLL); continue
+        new = sorted((gid for gid in snap if gid not in ST), key=lambda x: -snap[x][3])
+        if new:
+            for gid in new: mark(gid, 'solving')
+            threading.Thread(target=batch, args=([(gid,) + snap[gid] for gid in new], BUDGET1, sender), daemon=True).start()
+        if retry_thread is None or not retry_thread.is_alive():
+            with RETRY_LOCK:
+                RETRY[:] = [it for it in RETRY if it[0] in snap and ST.get(it[0]) == 'retry']
+                todo, RETRY[:] = RETRY[:4], RETRY[4:]
+            if todo:
+                retry_thread = threading.Thread(target=batch, args=(todo, BUDGET2, sender, 4, 1), daemon=True)
+                retry_thread.start()
+        STOP.wait(POLL)
+    say('racer stopped')
 
 if __name__ == '__main__':
     main()

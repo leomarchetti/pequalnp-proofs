@@ -123,17 +123,17 @@ A group of fast contributors opens a PR for every step they can solve, 2–3 min
 On November 26 these contributors raced about 30–120 such steps an hour, with about 380 in the 14:00 hour, and merged about 60% of them. The rest stay open and are probably false at their bound. The lease-first flow with a 60 s submit spacing loses every one of these races.
 
 **What it does.**
-1. Reads `gaps.json` every 20 s. The file has `max-age=30`.
-2. Sends every step it has not seen before to one WSL batch (`wave_solve2.sh`). Each step gets an AND/OR/NOT SAT search with a 20 s budget, 8 at a time, and results stream back one line per step.
-3. Verifies each circuit on the `k²` one-hot inputs in Python.
-4. Asks the desk `/desk/step?gap=` about the step right before sending:
-   - `open` or `leased`: send;
-   - `pr_open`: send only while every rival PR is younger than 45 s;
-   - anything else: skip.
-5. Cuts the branch, named after the step, from upstream main in a spare worktree and commits one file. That file holds the step's imports, the witness in a `.Helpers` namespace, and the theorem with the step's statement verbatim. The proof is `refine ⟨witness, ?_, by decide, by decide +kernel⟩` and `simp [FanInTwo, witness]`.
-6. Pushes the branch to the fork and opens the PR at least 3 s after the previous one.
+- **Polling:** reads `gaps.json` every 15 s. The file has `max-age=30`.
+- **Fast pass:** each set of steps it has not seen before starts its own WSL batch (`wave_solve2.sh`) at once, so a new wave never waits for an earlier one. Each step gets an AND/OR/NOT SAT search with a 20 s budget, 8 at a time, and results stream back one line per step. Each circuit is verified on the `k²` one-hot inputs in Python and queued for sending as soon as it is found.
+- **Slow pass:** steps the fast pass leaves UNKNOWN get one 150 s pass, 4 at a time at the lowest CPU priority, one batch at a time.
+- **Sending:** one sender thread does all git work and PRs. Right before sending it asks the desk `/desk/step?gap=`:
+  - `open` or `leased`: send;
+  - `pr_open`: send only while every rival PR is younger than 45 s;
+  - `not_open`: look again every 10 s, up to 6 times. A step that has just appeared answers `not_open` for a short while; the first version dropped a step it had solved ahead of everyone because of this;
+  - anything else: skip.
+- **The PR:** the branch, named after the step, is cut from upstream main in a spare worktree and holds one file: the step's imports, the witness in a `.Helpers` namespace, and the theorem with the step's statement verbatim. The proof is `refine ⟨witness, ?_, by decide, by decide +kernel⟩` and `simp [FanInTwo, witness]`. The branch is pushed to the fork and the PR opens at least 3 s after the previous one.
 
-Each step is sent at most once (`state.json`), which keeps the racer clear of the desk's pause for re-sending to closed steps. Steps the first pass leaves UNKNOWN get one 150 s pass when no new steps are waiting. On its first start the racer records every open step as old and skips it.
+Each step is sent at most once (`state.json`), which keeps the racer clear of the desk's pause for re-sending to closed steps. On its first start the racer records every open step as old and skips it.
 
 The racer exits on any of these:
 - a `STOP` file on upstream main;
