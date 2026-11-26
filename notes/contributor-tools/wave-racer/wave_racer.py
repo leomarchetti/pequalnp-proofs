@@ -3,8 +3,9 @@
 Threads:
   - poller (main): reads gaps.json every POLL s. Each set of steps it has not seen before starts its own solve batch
     at once, so a new wave never waits for an earlier one.
-  - solve batches: one WSL call each (wave_solve2.sh): AND/OR/NOT SAT, BUDGET1 s per step, 8 at a time, results
-    streamed back. Each SAT result is verified in Python and queued for sending as soon as it arrives.
+  - solve batches: AND/OR/NOT SAT (wave_solve2.sh), 16 at a time, results streamed back. Two stages: every step
+    gets 3 s, then the steps still open get BUDGET1 s, so an easy step never waits behind hard ones. Each SAT result
+    is verified in Python and queued for sending as soon as it arrives.
   - retry lane: steps the fast pass left UNKNOWN get one BUDGET2 pass, 4 at a time at the lowest CPU priority, one
     retry batch at a time.
   - sender (one thread, so git work and PRs are serial): asks the desk about the step right before sending:
@@ -32,6 +33,7 @@ ME = os.environ['PNP_GH']  # your GitHub login (the fork's owner)
 SNAP = 'https://data.pequalnp.com/data/desk/gaps.json'
 DESK = 'https://pequalnp.com/desk'
 POLL, BUDGET1, BUDGET2, RACE_WINDOW, GAP = 15, 20, 150, 45, 3
+FAST, PAR_FAST = (3, BUDGET1), 16   # fast pass: every step gets 3 s, then the rest get 20 s, 16 searches at a time
 WAIT_STEP, WAIT_TRIES = 10, 6
 PAT = re.compile(r'^∃ C : PEqualNP\.CircuitLowerBounds\.Circuit, PEqualNP\.MetaComplexity\.FanInTwo C ∧ C\.size ≤ (\d+) ∧ '
                  r'PEqualNP\.Represents\.Represents \(fun u v : Fin (\d+) => \((\d+) : ℕ\)\.testBit \((\d+) \* u\.val \+ v\.val\)\) C$')
@@ -221,25 +223,36 @@ def solve_stream(items, budget, par=8, nice=0):
 
 RETRY = []; RETRY_LOCK = threading.Lock()
 
-def batch(items, budget, sender, par=8, nice=0):
-    """items: [(gid, k, s, mask, weight, gap)]"""
+def batch(items, budgets, sender, par=PAR_FAST, nice=0, retry_lane=False):
+    """items: [(gid, k, s, mask, weight, gap)]; one stage per budget, each stage on the steps the last left UNKNOWN
+    (short budgets first, so an easy step never waits behind a hard one)"""
     info = {it[0]: it for it in items}
-    say('%s of %d (budget %d s): %s' % ('batch' if budget == BUDGET1 else 'retry batch', len(items), budget, ' '.join(info)))
+    say('%s of %d (budgets %s s, %d at a time): %s' % ('retry batch' if retry_lane else 'batch', len(items),
+        '/'.join(map(str, budgets)), par, ' '.join(info)))
     threading.Thread(target=lambda: _safe(sender.fetch), daemon=True).start()
+    todo = list(items)
     try:
-        for gid, status, gates in solve_stream(items, budget, par, nice):
-            _, k, s, mask, w, g = info[gid]
-            if status == 'SAT' and ok(k, mask, gates, s):
-                say(gid, 'solved: %d gates (bound %d, weight %d)' % (len(gates), s, w))
-                mark(gid, 'queued'); sender.put((gid, k, s, gates, g, 0))
-            elif status == 'UNSAT':
-                mark(gid, 'unsat'); say(gid, 'UNSAT at bound', s)
-            elif budget == BUDGET1:
-                mark(gid, 'retry')
-                with RETRY_LOCK: RETRY.append(info[gid])
-                say(gid, status if status != 'SAT' else 'SAT but failed verification', '-> retry lane')
-            else:
-                mark(gid, 'unknown'); say(gid, status, 'after the long pass')
+        for i, budget in enumerate(budgets):
+            last = i == len(budgets) - 1; left = []
+            for gid, status, gates in solve_stream(todo, budget, par, nice):
+                _, k, s, mask, w, g = info[gid]
+                if status == 'SAT' and ok(k, mask, gates, s):
+                    say(gid, 'solved: %d gates (bound %d, weight %d, %d s stage)' % (len(gates), s, w, budget))
+                    mark(gid, 'queued'); sender.put((gid, k, s, gates, g, 0))
+                elif status == 'UNSAT':
+                    mark(gid, 'unsat'); say(gid, 'UNSAT at bound', s)
+                elif not last:
+                    left.append(info[gid])
+                elif not retry_lane:
+                    mark(gid, 'retry')
+                    with RETRY_LOCK: RETRY.append(info[gid])
+                    say(gid, status if status != 'SAT' else 'SAT but failed verification', '-> retry lane')
+                else:
+                    mark(gid, 'unknown'); say(gid, status, 'after the long pass')
+            if not last and left:
+                say('%d left after the %d s stage: %s' % (len(left), budget, ' '.join(it[0] for it in left)))
+            todo = left
+            if not todo: break
     except Exception as e:
         say('batch error:', repr(e)[:200])
 
@@ -286,13 +299,13 @@ def main():
         new = sorted((gid for gid in snap if gid not in ST), key=lambda x: -snap[x][3])
         if new:
             for gid in new: mark(gid, 'solving')
-            threading.Thread(target=batch, args=([(gid,) + snap[gid] for gid in new], BUDGET1, sender), daemon=True).start()
+            threading.Thread(target=batch, args=([(gid,) + snap[gid] for gid in new], FAST, sender), daemon=True).start()
         if retry_thread is None or not retry_thread.is_alive():
             with RETRY_LOCK:
                 RETRY[:] = [it for it in RETRY if it[0] in snap and ST.get(it[0]) == 'retry']
                 todo, RETRY[:] = RETRY[:4], RETRY[4:]
             if todo:
-                retry_thread = threading.Thread(target=batch, args=(todo, BUDGET2, sender, 4, 1), daemon=True)
+                retry_thread = threading.Thread(target=batch, args=(todo, (BUDGET2,), sender, 4, 1, True), daemon=True)
                 retry_thread.start()
         STOP.wait(POLL)
     say('racer stopped')

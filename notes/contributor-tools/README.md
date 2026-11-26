@@ -124,7 +124,7 @@ On November 26 these contributors raced about 30–120 such steps an hour, with 
 
 **What it does.**
 - **Polling:** reads `gaps.json` every 15 s. The file has `max-age=30`.
-- **Fast pass:** each set of steps it has not seen before starts its own WSL batch (`wave_solve2.sh`) at once, so a new wave never waits for an earlier one. Each step gets an AND/OR/NOT SAT search with a 20 s budget, 8 at a time, and results stream back one line per step. Each circuit is verified on the `k²` one-hot inputs in Python and queued for sending as soon as it is found.
+- **Fast pass:** each set of steps it has not seen before starts its own WSL batch (`wave_solve2.sh`) at once, so a new wave never waits for an earlier one. Steps get AND/OR/NOT SAT searches 16 at a time (8 cores, 16 threads) in two stages. First every step gets 3 s, then the steps still unsolved get 20 s. Results stream back one line per step. In one replayed wave of 23 steps, solve times at 8 at a time were 0.3–18 s for the 7 solvable steps, and the 16 others used their full budget. In arrival order with 8 slots, an easy step could wait 40–60 s behind hard ones. Staged, the easy ones came back at 2–4 s and the others at 20–24 s. Each circuit is verified on the `k²` one-hot inputs in Python and queued for sending as soon as it is found.
 - **Slow pass:** steps the fast pass leaves UNKNOWN get one 150 s pass, 4 at a time at the lowest CPU priority, one batch at a time.
 - **Sending:** one sender thread does all git work and PRs. Right before sending it asks the desk `/desk/step?gap=`:
   - `open` or `leased`: send;
