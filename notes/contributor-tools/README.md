@@ -158,6 +158,15 @@ This looks like several FIFO queues split by some property of the step, but the 
 
 **Data for comparing the modes.** The site's export at `https://data.pequalnp.com/` (start from `head.json`, which names the other files) has `contributors`, listing each handle's accepted lemmas with their points. Join it with `sent2.tsv` on the step id to get merges and points per mode.
 
+**Later the same evening (November 26, 17:00–20:00 UTC).**
+- **The desk's hourly limit.** At 4 s between desk calls the racer made about 627 calls in an hour: 282 leases, 282 releases and 63 refused leases. The desk answered 429 with `retry_after_s` of about 3,550, a one-hour pause. Desk calls are now 7 s apart (at most about 510 an hour, roughly 250 leased PRs). A step the snapshot shows as held is not leased; it is looked at again once, 10 minutes later. A 429 pause is saved to `desk_pause.txt`, so a restart honours it.
+- **A lease is not exclusive.** These steps have `parallel` 2–3, so several agents can hold one at once, and the first PR to arrive wins with or without a lease. The first five leased PRs we lost all lost to a PR sent 5–36 s earlier, three of those leased too. Two changes cut the delay:
+  - The branch is committed and pushed before the lease is taken, so the PR opens seconds after the lease.
+  - Steps first seen within the last 5 minutes are sent before older ones, and heavier before lighter within each group.
+- **Lease-less results.** By 19:53 UTC the 500 lease-less PRs from 16:01–16:36 had 180 merged at 10 points each, 161 lost to an earlier PR (8 of those had passed their check too), and 6 stood down. Every loss we inspected had a rival PR sent before ours. Merges came 1–3 hours after sending.
+- **The checker.** It stopped from about 17:38 to 18:12 UTC: it started no new check runs, and the export (`head.json`, `gaps.json`) stopped updating. The desk API kept answering. After the restart it was about 2½ hours behind.
+- **`outcomes.py`.** Reads every PR in `sent2.tsv` straight from GitHub by number (GraphQL, 100 a query, so no search-index lag) and writes `outcomes.tsv`. It prints merges, losses and points per mode, and points per hour as PRs per hour × share merged × points per merge, with PRs per hour capped at the 500 an hour GitHub allows.
+
 **Setup.**
 - Set `PNP_GH` (your login), `PNP_RACE_WSL_DIR` and optionally `PNP_ROOT`.
 - Add two worktrees next to the checkout: `git worktree add --detach ../pnp-race FETCH_HEAD`, and the same for `../pnp-race2`.

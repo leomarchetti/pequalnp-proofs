@@ -11,7 +11,8 @@ Threads:
   - solve batches: SAT exact synthesis (wave_solve2.sh), 16 at a time, results streamed back. Two stages: every
     step gets 3 s, then the steps still open get BUDGET1 s, so an easy step never waits behind hard ones. Each SAT
     result is verified in Python on every input row the statement asks about and queued for sending at once.
-  - retry lane: steps the fast pass left UNKNOWN get one BUDGET2 pass, 4 at a time at the lowest CPU priority.
+  - retry lane: steps the fast pass left UNKNOWN (and steps open since before the first start) get one BUDGET2
+    pass, 16 at a time at the lowest CPU priority, so a new wave's searches still get the CPU first.
   - senders (two threads, one spare worktree each; heaviest step first): right before sending, the step is looked up
     in the poller's latest snapshot, with no desk call (the desk's /desk/step answered 429 at about one request
     every 2 s):
@@ -180,9 +181,12 @@ def pr_age(num):
 LATEST = {'snap': {}, 't': 0.0}               # the poller's latest snapshot, read by the senders
 MODEL = 'claude-opus-5-5'
 MIN_WEIGHT = 20                               # weight-1 steps get stood down unchecked
-DESK_GAP = 4.0                                # join.txt: one desk request every few seconds at most
+DESK_GAP = 7.0                                # join.txt: one desk request every few seconds at most. At 4 s (about
+                                              # 627 calls an hour) the desk answered 429 with a one-hour pause.
 DESK_LOCK = threading.Lock(); DESK_LAST = [0.0]; DESK_PAUSED_UNTIL = [0.0]
-PR_HOUR_CAP = 400                             # GitHub refused PR creation after 500 in an hour
+FRESH = 300                                   # a step first seen this many seconds ago still counts as fresh
+BACKLOG = set()                               # steps queued before a restart: re-solved, but never fresh
+PR_HOUR_CAP = 400                            # GitHub refused PR creation after 500 in an hour
 PR_TIMES = []
 
 def desk_call(method, path, params):
@@ -204,6 +208,7 @@ def desk_call(method, path, params):
             if e.code == 429:
                 ra = int(body.get('retry_after_s') or e.headers.get('Retry-After') or 600)
                 DESK_PAUSED_UNTIL[0] = time.time() + ra
+                with open(DIR + '/desk_pause.txt', 'w') as f: f.write('%.0f' % DESK_PAUSED_UNTIL[0])   # survives a restart
                 say('desk answered 429; all desk calls paused for %d s' % ra)
             return e.code, body
         except Exception as e:
@@ -244,7 +249,9 @@ class Sender:
         self.q = SENDQ; self.n = SENDN
 
     def put(self, item, when=0.0):
-        self.q.put((when, -item[0]['w'], next(self.n), item))
+        # fresh steps (first seen under FRESH s ago) go ahead of backlog: that is where the close races are; then heaviest
+        fresh = 0 if time.time() - item[0].get('seen', 0) < FRESH else 1
+        self.q.put((when, fresh, -item[0]['w'], next(self.n), item))
 
     def fetch(self):
         with self.lock:
@@ -256,10 +263,10 @@ class Sender:
 
     def loop(self):
         while not STOP.is_set():
-            try: when, negw, n, item = self.q.get(timeout=1)
+            try: when, fresh, negw, n, item = self.q.get(timeout=1)
             except queue.Empty: continue
             if when > time.time():
-                self.q.put((when, negw, n, item)); time.sleep(0.5); continue
+                self.q.put((when, fresh, negw, n, item)); time.sleep(0.5); continue
             step, gates, tries = item
             try:
                 res = self.send(step, gates)
@@ -283,6 +290,25 @@ class Sender:
         if pr not in ('0', 'None'):
             say(gid, 'late: the snapshot shows %s PR(s)' % pr); return 'late'
         gh_capacity_wait()   # never hold a lease while GitHub would refuse the PR
+        if now['g'].get('held_now') and not step.get('held_retried'):   # someone holds it: no desk call now
+            step['held_retried'] = True
+            say(gid, 'held by another agent per the snapshot; looking again in 10 minutes')
+            return ('wait', 600)
+        # The branch is built and pushed BEFORE the lease, so the PR opens seconds after the lease is granted:
+        # races on fresh steps were being lost by 5-36 s. A pushed branch without a lease is just left unused.
+        self.fetch()
+        path = g.get('file') or 'lean/PEqualNP/Outside/%s.lean' % gid.replace('-', '_')
+        if run(['git', 'cat-file', '-e', 'FETCH_HEAD:' + path], cwd=self.wt)[0] == 0:
+            say(gid, 'already on main'); return 'on_main'
+        rc, out = run(['git', 'checkout', '-q', '-f', '-B', gid, 'FETCH_HEAD'], cwd=self.wt)
+        if rc: say(gid, 'checkout failed', out[:200]); return 'error'
+        with open(self.wt + '/' + path, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(lean_file(step, gates))
+        run(['git', 'add', path], cwd=self.wt)
+        rc, out = run(['git', 'commit', '-q', '-m', gid + '\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'], cwd=self.wt)
+        if rc: say(gid, 'commit failed', out[:200]); return 'error'
+        rc, out = run(['git', 'push', '-q', '-f', 'origin', gid], cwd=self.wt, timeout=120)
+        if rc: say(gid, 'push failed', out[:200]); return 'error'
         lid, points, refused = lease(gid)
         if lid: say(gid, 'leased (%s points), lease %s' % (points, lid))
         if not lid:
@@ -296,20 +322,7 @@ class Sender:
         def give_back(reason, result):
             desk_call('POST', '/release', {'lease': lid, 'reason': reason})
             return result
-        self.fetch()
-        path = g.get('file') or 'lean/PEqualNP/Outside/%s.lean' % gid.replace('-', '_')
-        if run(['git', 'cat-file', '-e', 'FETCH_HEAD:' + path], cwd=self.wt)[0] == 0:
-            say(gid, 'already on main'); return give_back('other', 'on_main')
-        rc, out = run(['git', 'checkout', '-q', '-f', '-B', gid, 'FETCH_HEAD'], cwd=self.wt)
-        if rc: say(gid, 'checkout failed', out[:200]); return give_back('other', 'error')
-        with open(self.wt + '/' + path, 'w', encoding='utf-8', newline='\n') as f:
-            f.write(lean_file(step, gates))
-        run(['git', 'add', path], cwd=self.wt)
-        rc, out = run(['git', 'commit', '-q', '-m', gid + '\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'], cwd=self.wt)
-        if rc: say(gid, 'commit failed', out[:200]); return give_back('other', 'error')
-        rc, out = run(['git', 'push', '-q', '-f', 'origin', gid], cwd=self.wt, timeout=120)
-        if rc: say(gid, 'push failed', out[:200]); return give_back('other', 'error')
-        body = ('Lease: %s\n\nA %d-gate circuit (%s, fan-in at most two) found by SAT-based exact synthesis; it is checked on all %d '
+        body =('Lease: %s\n\nA %d-gate circuit (%s, fan-in at most two) found by SAT-based exact synthesis; it is checked on all %d '
                 'inputs the statement asks about.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)'
                 % (lid, len(gates), 'AND, OR, NOT' if step['allow'] else 'AND and OR', len(step['rows'])))
         mark(gid, 'sending')
@@ -433,6 +446,10 @@ def main():
     subprocess.run(['wsl.exe', '-e', 'bash', '-lc', "sed 's/\\r$//' %s/wave_solve2.sh > ~/ns/wave_solve2.sh" % WSL_DIR])
     if '--selftest' in sys.argv: selftest(); return
     ST.update(load_state())
+    try:   # a desk pause from before a restart still holds
+        DESK_PAUSED_UNTIL[0] = float(open(DIR + '/desk_pause.txt').read().strip())
+        if DESK_PAUSED_UNTIL[0] > time.time(): say('desk calls paused for another %.0f s (earlier 429)' % (DESK_PAUSED_UNTIL[0] - time.time()))
+    except (FileNotFoundError, ValueError): pass
     try:   # PRs already sent in the last hour count toward the GitHub cap
         for line in open(DIR + '/sent.txt', encoding='utf-8'):
             t = datetime.fromisoformat(line.split()[0]).timestamp()
@@ -448,10 +465,13 @@ def main():
         for gid in snap: mark(gid, 'old')
         say('first start: %d open steps recorded as old' % len(snap))
     for gid, v in list(ST.items()):  # interrupted fast searches start again as new; 'sending' is never repeated
-        if v in ('solving', 'queued'):
+        if v in ('solving', 'queued', 'lease_wait'):
             with ST_LOCK: del ST[gid]
+            BACKLOG.add(gid)   # solved again after the restart, but not fresh
         elif v == 'retry' and gid in snap:
             RETRY.append(snap[gid])
+        elif v == 'old' and gid in snap and snap[gid]['w'] >= MIN_WEIGHT and str(snap[gid]['g'].get('pr_open')) in ('0', 'None'):
+            RETRY.append(snap[gid]); mark(gid, 'retry')   # open since before the first start, never tried
     kinds = {}
     for st in snap.values(): kinds[st['kind']] = kinds.get(st['kind'], 0) + 1
     say('racer up: %d open steps it can take %s, %d to retry' % (len(snap), kinds, len(RETRY)))
@@ -475,14 +495,14 @@ def main():
             new.append(gid)
         new.sort(key=lambda x: (-snap[x]['w'], -int(x.split('-')[-1])))   # heaviest first, then newest
         if new:
-            for gid in new: mark(gid, 'solving')
+            for gid in new: mark(gid, 'solving'); snap[gid]['seen'] = 0 if gid in BACKLOG else time.time()
             threading.Thread(target=batch, args=([snap[gid] for gid in new], FAST, sender), daemon=True).start()
         if retry_thread is None or not retry_thread.is_alive():
             with RETRY_LOCK:
                 RETRY[:] = [st for st in RETRY if st['id'] in snap and ST.get(st['id']) == 'retry']
-                todo, RETRY[:] = RETRY[:4], RETRY[4:]
-            if todo:
-                retry_thread = threading.Thread(target=batch, args=(todo, (BUDGET2,), sender, 4, 1, True), daemon=True)
+                todo, RETRY[:] = RETRY[:16], RETRY[16:]
+            if todo:   # all 16 threads at the lowest priority: a new wave's searches still get the CPU first
+                retry_thread = threading.Thread(target=batch, args=(todo, (BUDGET2,), sender, 16, 1, True), daemon=True)
                 retry_thread.start()
         STOP.wait(POLL)
     say('racer stopped')
