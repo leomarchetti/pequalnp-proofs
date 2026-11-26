@@ -112,6 +112,42 @@ Everything lives in [reduction-pipeline/](reduction-pipeline/). The scripts expe
 - Run the workers as persistent background processes writing logs, and have monitors only tail those logs.
 - Before trusting a change, run the end-to-end dry test: splice every armed child into a fake skeleton and build it, run two concurrent `lake build`s, and run `DRY=1 fastsubmit.sh` with three untracked files present.
 
+## Wave racer for small `Represents` steps (November 26, 2026)
+
+`wave-racer/` sends a checked circuit for a new `k`×`k` `Represents` FIND step (`k` ≤ 5) within about a minute of the step appearing.
+
+**Why it exists.** These steps arrive in waves, mostly 5×5 at size bound 8–10, weight 100 each. One wave ran about 20 new steps a minute for 25 minutes (14:03–14:27 UTC on November 26). The steps show up in `gaps.json` with `offerable_now` unset, before `next` offers them.
+
+A group of fast contributors opens a PR for every step they can solve, 2–3 minutes after the step appears. They send without a lease, about 3 s apart. A lease does not protect a step: a lease holder's PR lost to one sent without a lease six minutes earlier.
+
+On November 26 these contributors raced about 30–120 such steps an hour, with about 380 in the 14:00 hour, and merged about 60% of them. The rest stay open and are probably false at their bound. The lease-first flow with a 60 s submit spacing loses every one of these races.
+
+**What it does.**
+1. Reads `gaps.json` every 20 s. The file has `max-age=30`.
+2. Sends every step it has not seen before to one WSL batch (`wave_solve2.sh`). Each step gets an AND/OR/NOT SAT search with a 20 s budget, 8 at a time, and results stream back one line per step.
+3. Verifies each circuit on the `k²` one-hot inputs in Python.
+4. Asks the desk `/desk/step?gap=` about the step right before sending:
+   - `open` or `leased`: send;
+   - `pr_open`: send only while every rival PR is younger than 45 s;
+   - anything else: skip.
+5. Cuts the branch, named after the step, from upstream main in a spare worktree and commits one file. That file holds the step's imports, the witness in a `.Helpers` namespace, and the theorem with the step's statement verbatim. The proof is `refine ⟨witness, ?_, by decide, by decide +kernel⟩` and `simp [FanInTwo, witness]`.
+6. Pushes the branch to the fork and opens the PR at least 3 s after the previous one.
+
+Each step is sent at most once (`state.json`), which keeps the racer clear of the desk's pause for re-sending to closed steps. Steps the first pass leaves UNKNOWN get one 150 s pass when no new steps are waiting. On its first start the racer records every open step as old and skips it.
+
+The racer exits on any of these:
+- a `STOP` file on upstream main;
+- a 429 from the desk;
+- a GitHub rate-limit answer.
+
+**Setup.**
+- Set `PNP_GH` (your login), `PNP_RACE_WSL_DIR` and optionally `PNP_ROOT` and `PNP_RACE_WT`.
+- Add the worktree with `git worktree add --detach ../pnp-race FETCH_HEAD`.
+- `synth_sat3.py` and CaDiCaL must be in `~/ns` in WSL.
+- `--selftest` solves a known 5×5 instance at bound 8 and builds the file with `lake env lean`. It took 2.2 s to solve and 7 s to build.
+
+**Not covered.** The leftover steps nobody solves need an exhaustive search (`repsearch` above) or a lower-bound proof. The racer does not try them beyond the 150 s pass.
+
 ## pcx short refutations
 
 [pcx-sat/](pcx-sat/) has a SAT encoder for "PHP(m,n) has a resolution refutation with exactly D derived lines" (`enc.py`), a decoder with an independent re-check (`dec.py`), a lemma combiner (`combine.py`) and a Lean emitter in the merged `L_pcx_155` style (`emit.py`, `header.lean`). `example_php43_58lines.lean` is the checked 58-line PHP(4,3) proof. Pass `--modelalllits=true` to CaDiCaL 3.1. The 55-line searches ran 25–45 minutes without an answer.
