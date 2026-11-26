@@ -64,8 +64,8 @@ def splice(src, block, proof):
 
 def sat(num, k, s, mask):
     h = format(mask, 'x')
-    cmd = (f"cd ~/ns && TAG=rw_{num}_ timeout 700 python3 synth_sat3.py {2*k} rel:{k}:{h} {s} 1 "
-           f"~/cadical/build/cadical cnfrw 650 | head -40")
+    cmd = (f"cd ~/ns && TAG=rw_{num}_ timeout 150 python3 synth_sat3.py {2*k} rel:{k}:{h} {s} 1 "
+           f"~/cadical/build/cadical cnfrw 120 | head -40")
     out = subprocess.run(['wsl.exe', '-e', 'bash', '-lc', cmd], capture_output=True, text=True).stdout
     first = out.strip().splitlines()[0] if out.strip() else ''
     if not first.startswith('SAT'):
@@ -97,14 +97,30 @@ def handle(gid, stmt, st):
         rec['gates'] = gates; rec['k'] = k; rec['s'] = s
         say(gid, 'SAT', len(gates), 'gates (bound', s, ')')
     if not rec.get('local_ok'):
-        block, proof = lean_block(num, k, [tuple(g) for g in rec['gates']])
-        src = 'import Mathlib\nimport PEqualNP.Defs\n\ntheorem PEqualNP.Outside.L_meta_%s : (%s) := by\n  sorry\n' % (num, stmt)
-        fn = D + '/W_L_meta_%s.lean' % num
-        open(fn, 'w', encoding='utf-8', newline='\n').write(splice(src, block, proof))
-        if not local_check(fn):
-            rec['status'] = 'local-fail'; say(gid, 'LOCAL CHECK FAILED'); return
-        rec['local_ok'] = True; say(gid, 'local Lean check passed')
+        rec['stmt'] = stmt
+        rec['status'] = 'needs-local'      # checked together with the batch in main()
+        return
     rec['status'] = 'ready'
+
+def batch_local_check(st):
+    """One Lean run over every solved step not yet checked locally (Mathlib loads once)."""
+    ids = [g for g, r in st.items() if r.get('status') == 'needs-local' and r.get('gates')]
+    if not ids: return
+    parts = ['import Mathlib', 'import PEqualNP.Defs', '']
+    for gid in ids:
+        r = st[gid]; num = gid.split('-')[-1]
+        block, proof = lean_block(num, r['k'], [tuple(g) for g in r['gates']])
+        thm = 'theorem PEqualNP.Outside.L_meta_%s : (%s) := by\n  sorry\n' % (num, r['stmt'])
+        parts.append(splice(block + thm, '', proof) if False else block + thm.replace('  sorry\n', proof))
+    fn = D + '/W_batch.lean'
+    open(fn, 'w', encoding='utf-8', newline='\n').write('\n'.join(parts))
+    good = local_check(fn)
+    for gid in ids:
+        if good:
+            st[gid]['local_ok'] = True; st[gid]['status'] = 'ready'
+        else:
+            st[gid]['status'] = 'local-fail'
+    say('batch local Lean check of', len(ids), 'steps:', 'passed' if good else 'FAILED')
 
 def try_submit(gid, st):
     rec = st[gid]; num = gid.split('-')[-1]
@@ -118,7 +134,10 @@ def try_submit(gid, st):
     if gid in closed:
         rec['status'] = 'closed'; return
     out = pnp('next', '--proof-of', gid)
-    if re.search(r'not open|proved first|just proved|already on main|stood down', out):
+    time.sleep(10)          # pace every desk request, whatever the answer
+    # only the desk's refusal sentences; the normal lease output always contains a RULE line
+    # mentioning "already on main", so that phrase must not be matched here
+    if re.search(r'step is not open|was just proved|proved by someone else|stood down|withdrawn: true', out):
         rec['status'] = 'closed'; say(gid, 'closed on the desk; never retried')
         with open('.pnp/closed_steps.txt', 'a', encoding='utf-8') as fc: fc.write(gid + '\n')
         return
@@ -133,7 +152,18 @@ def try_submit(gid, st):
     if not (os.path.exists(f) and 'sorry' in open(f, encoding='utf-8').read()):
         rec['status'] = 'no-skeleton'; say(gid, 'no skeleton:', out.strip().splitlines()[:2]); return
     block, proof = lean_block(num, rec['k'], [tuple(g) for g in rec['gates']])
-    open(f, 'w', encoding='utf-8', newline='\n').write(splice(open(f, encoding='utf-8').read(), block, proof))
+    skel = open(f, encoding='utf-8').read()          # read BEFORE opening for write (which truncates)
+    new = splice(skel, block, proof)
+    with open(f, 'w', encoding='utf-8', newline='\n') as fw:
+        fw.write(new)
+    rec['leased'] = True; say(gid, 'LEASED and spliced')
+
+def finish_step(gid, st):
+    """Desk check and single submit of a step we hold (phase B)."""
+    rec = st[gid]; num = gid.split('-')[-1]
+    f = 'lean/PEqualNP/Outside/L_meta_%s.lean' % num
+    if not (os.path.exists(f) and 'sorry' not in open(f, encoding='utf-8').read()):
+        rec['leased'] = False; return
     pnp('check', gid, timeout=900)
     if not os.path.exists('.pnp/%s.checked' % gid):
         rec['status'] = 'desk-check-fail'; say(gid, 'DESK CHECK FAILED'); return
@@ -143,7 +173,7 @@ def try_submit(gid, st):
         rec['submitted'] = url[0]; say(gid, 'SUBMITTED', url[0])
     else:
         say(gid, 'submit gave:', (r.stdout + r.stderr).strip().splitlines()[:3])
-        if 'proved' in r.stdout + r.stderr or 'already on main' in r.stdout + r.stderr:
+        if re.search(r'not open|proved by someone else|was just proved|STOP|stopped|SKIP', r.stdout + r.stderr):
             rec['status'] = 'proved-first'
 
 def main():
@@ -157,14 +187,23 @@ def main():
             todo = [(gid, s) for gid, s in live.items() if PAT.match(s) and gid not in st]
             if todo:
                 say('new steps:', len(todo))
-                with ThreadPoolExecutor(4) as ex:
+                with ThreadPoolExecutor(6) as ex:
                     list(ex.map(lambda a: handle(a[0], a[1], st), todo))
                 save(st)
-            for gid in list(st):
-                if gid in live and st[gid].get('status') == 'ready' and not st[gid].get('submitted'):
-                    try_submit(gid, st); save(st)
-                elif gid not in live and st[gid].get('status') == 'ready' and not st[gid].get('submitted'):
+            batch_local_check(st); save(st)
+            pending = [g for g in st if st[g].get('status') == 'ready' and not st[g].get('submitted')]
+            for gid in pending:
+                if gid not in live:
                     st[gid]['status'] = 'gone'; save(st)
+            pending = [g for g in pending if g in live]
+            # phase A: lease every ready step first (holding it gives us the head start)
+            for gid in pending:
+                if not st[gid].get('leased'):
+                    try_submit(gid, st); save(st)
+            # phase B: desk check and submit the held ones, paced by fastsubmit.sh
+            for gid in pending:
+                if st[gid].get('leased') and st[gid].get('status') == 'ready' and not st[gid].get('submitted'):
+                    finish_step(gid, st); save(st)
         except Exception as e:
             say('loop error', type(e).__name__, str(e)[:200])
         time.sleep(30)

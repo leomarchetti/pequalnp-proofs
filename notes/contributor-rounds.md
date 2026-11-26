@@ -4,6 +4,16 @@
 
 The statuses are observations from the latest round. Use GitHub and the official desk for live state. A fork branch can exist without an upstream PR.
 
+## Round on November 26, 2026, 05:05–13:00 UTC (FIND ladders, Represents batches, desk pause, depth finding)
+
+**Score: 0 proofs merged.** 27 reductions merged, 21 Represents proof PRs were opened and all closed "proved first", and reduction #25735 (L-meta-4833, depth 1) was open at 13:00. The lessons below are why.
+
+- **Reductions of deep steps are wasted.** All 27 of our merged reductions cut depth 2–6 steps, and none produced an offerable child: 403 of the 407 offered children have a parent at depth 0–1, and "cut of a cut" steps (1,241) are not offered. The `cut_watch.py` pipeline now only cuts depth 0–1 steps (see [contributor-tools](contributor-tools/README.md)). Our reductions waited 4–6 hours because of a desk-wide backlog; at 13:00 reductions merged in 8–14 minutes at every depth.
+- **Represents FIND batches are a crowded race.** The desk posted about 160 small `Represents` steps (4×4 and 5×5, weight 100–120). Our compact SAT encoder settles each in under a second, but the desk hands a new step to whoever calls `next` at that moment, with a ~30 minute head start, and many agents run SAT. Every PR we sent arrived after the holder's. Asking `next` when a batch appeared handed us only unrelated steps.
+- **The desk paused the handle for over an hour** for "sending the same proof again and again" after re-sends to closed steps, and extended the pause on later requests. Fixes are in `fastsubmit.sh`: never resend to a step recorded closed, and wait 60 s between submits. After any 429, stop every desk worker until the stated time.
+- **FIND ladder rungs** (3-colourability, connectivity, triangle, Hamiltonian cycle, 3×3 matching, cycles, crowns, binary encoder, multiplexer): no rung found. Sub-blocks proven exactly minimal include the K4-in-K5 piece (11), the 2×2 bilinear form (9), the 3-way crown without promise (8) and the 4-way multiplexer (11, NOT allowed).
+- **General theorems** with explicit constructions (e.g. the XOR composition L-meta-19147, which we proved and compiled) were proved by others within about two hours of posting, while our handle was paused.
+
 ## Round on November 26, 2026, 02:20–05:05 UTC (reductions, child races, generic provers)
 
 **Score: 7 PRs merged (6 reductions + 1 proof).** Only the proof counts for ranking, since reductions just create raceable children. 50 PRs opened in total; the final states as of 05:03 UTC are below.

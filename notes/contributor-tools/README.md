@@ -90,8 +90,25 @@ Everything lives in [reduction-pipeline/](reduction-pipeline/). The scripts expe
 - `harvest_loop.py`: saves the hypotheses of others' new reduction PRs and flags no-AND children, plus circuit-free ones `decide +kernel` already proves.
 - `triage.py`: bulk `decide +kernel` / `simp` / `norm_num` attempts over many statements.
 
+**Choosing what to cut (measured on the afternoon of Nov 26)**
+- Only cut steps at depth 0 or 1. Of the 407 child steps the desk offered, 403 had a parent at depth 0 or 1, and the desk counts 1,241 "cut of a cut" steps as not offerable. Our 27 reductions of depth 2–6 steps all merged but produced no child anyone can lease: the cut is wasted however fast the racer is.
+- Skip weight-1 steps (447 are not offerable) and statements that already mention AND gates (an AND/no-AND cut of them is degenerate).
+- Depth does not change merge speed: reductions merged in a median of 8–14 minutes at every depth, with or without a `Lease:` line. Ours from 02:46–04:18 UTC waited until 08:00 because the desk had a backlog for everyone in that window.
+- Children are raced hard. Rivals (fededevi, nicohabets, titoreinaldo) post the child about 2 minutes after the reduction merges; our best was 1:35, and we lost one by 25 s.
+
+**Cut watcher**
+- `cut_watch.py` (with `cutlib.py`) polls the public snapshot every minute, makes no desk calls, and keeps its state in `.pnp/cuts/`. For each new step it requires depth 0–1, reductions open, no open PR, weight > 1, ≤ 1650 characters, and a `Monotone2`/`IsAO2` hypothesis on a ∀-bound circuit. It then:
+  - cuts on the presence of an AND gate;
+  - tries to prove the no-AND child, first with an edge template (an OR-only circuit cannot reject both ends of an edge of `graphFun G ∅` yet accept the pair; side conditions are tried with `subst`/`simp_all`/`omega`), then with `gen_generic` T1/T1b;
+  - compiles the reduction, runs the desk format guard, opens the PR from `../pnp-red` and arms the child in the racer.
+
+  When no template fits it logs `NEEDS-CHILD`. Write `.pnp/cuts/<N>/child.lean` (`theorem child_<N> : <h2>`) and run `cut_watch.py --send <N>`. Use `--once` for a dry pass. On L-meta-4833 the edge template found the 8–9 edge by itself.
+
 **Operating notes (Windows + Git Bash)**
 - Call Git Bash explicitly from Python (`C:/Program Files/Git/bin/bash.exe`): plain `bash` resolves to WSL.
+- `pnp.sh next` always prints "RULE Never change a file that is already on main". Never detect a refusal by matching "already on main": a worker that did abandoned ten leases it held.
+- In Python, read a file before `open(f, 'w')`: `open(f,'w').write(f(open(f).read()))` truncates first and reads nothing.
+- In a `bash -lc "cd X && (job1) & (job2) &"` line the `cd` only applies to job1, and job2 runs in the current directory. Stray output files in the repo root make `pnp.sh submit` refuse silently, so `fastsubmit.sh` now parks every untracked path outside `.pnp/` during a submit.
 - Run the workers as persistent background processes writing logs, and have monitors only tail those logs.
 - Before trusting a change, run the end-to-end dry test: splice every armed child into a fake skeleton and build it, run two concurrent `lake build`s, and run `DRY=1 fastsubmit.sh` with three untracked files present.
 
