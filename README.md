@@ -65,7 +65,7 @@ The full rules for the pull request are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Contributor handoff for this fork
 
-[Strategy and results](notes/contributor-strategy.md), [submission playbook](notes/contributor-playbook.md), and [reusable search tools](notes/contributor-tools/README.md).
+[Strategy](notes/contributor-strategy.md), [submission playbook](notes/contributor-playbook.md), [round log](notes/contributor-rounds.md), and [reusable search tools](notes/contributor-tools/README.md).
 
 ## What the checker requires
 

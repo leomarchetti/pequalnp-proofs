@@ -1,6 +1,6 @@
 # Contributor playbook
 
-[Strategy and results](contributor-strategy.md) · [Reusable search code](contributor-tools/README.md)
+[Strategy](contributor-strategy.md) · [Round log](contributor-rounds.md) · [Reusable search code](contributor-tools/README.md)
 
 Use this branch as a reference from the fork. Start proof work on a clean checkout or worktree of current `upstream/main`. `origin` should point to the contributor’s fork, and `upstream` to `open-goat/pequalnp-proofs`. Use the repository’s [contribution rules](../CONTRIBUTING.md), [desk guide](https://pequalnp.com/join.txt), and current [`tools/pnp.sh`](../tools/pnp.sh) for the protocol. The playbook records what worked on this fork.
 
@@ -10,6 +10,7 @@ From a proof checkout in the fork, read the handoff without switching branches.
 git fetch origin codex/contributor-playbook
 git show FETCH_HEAD:notes/contributor-strategy.md
 git show FETCH_HEAD:notes/contributor-playbook.md
+git show FETCH_HEAD:notes/contributor-rounds.md
 ```
 
 ## Setup and discovery
@@ -34,3 +35,8 @@ git show FETCH_HEAD:notes/contributor-playbook.md
 - Use explicit witnesses and independently replay them before rendering Lean. Chunk large lists for kernel checks, prove facts about each chunk and combine them with ordinary lemmas. Use kernel checking where suitable, subject to the current guard. Keep the final proof within the project’s size and resource limits.
 - For unexpectedly false statements, try a tiny Lean counterexample first. Inspect the desk’s exact refutation twin before writing a submission. Keep a local counterexample in the research record when no twin is offered.
 - The five-minute cutoff is a contributor preference. The desk and the upstream checker determine eligibility and acceptance.
+- `submit` can push the proof branch and then stop at its final desk check. Check GitHub for a PR from the fork branch before counting it as submitted. If the desk closed and no PR was created, stop the attempt, release any remaining lease, and preserve the proof for replay. Keep the branch for recovery and switch to a clean proof base for the next gap.
+
+## Close each round
+
+At the end of each work round, refresh the GitHub states of this round’s PRs and any outstanding PRs in the last entry. Update the [round log](contributor-rounds.md) with the checked proofs, upstream PR links and verdicts, and any desk block or near miss that informs the next search. Update the [strategy](contributor-strategy.md) or add a small reproducible example when a method will transfer to another gap. Do this even for a round with no upstream PRs. Commit and push the updated playbook branch before wrapping up.
