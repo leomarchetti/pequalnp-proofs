@@ -65,3 +65,40 @@ g++ -O3 -march=native -fopenmp -o repsearch notes/contributor-tools/repsearch.cp
 **Completeness.** The search requires every gate to be read later or be the output, and it uses a canonical topological order (each gate reads its predecessor or has a larger `(op, a, b)` key). It removes constant and duplicate wires and uses only AND2, OR2 and NOT1. For plain existence questions none of these restrictions loses a solution. In the NOT-on-gate statements, a NOT's ignored second input counts as "read", so a qualifying NOT can be kept alive as the second input of another NOT. Such a circuit drops to a size-(k−1) circuit containing some NOT. So also run mode `1` at size `k-1` before calling a NOT-on-gate gap empty.
 
 **Timings on 16 threads.** For 5 inputs at size 8: about 13 s and 1.6·10⁹ nodes. Size 9: 450–620 s and 6.0·10¹⁰ nodes. Expect each extra gate to cost about 40× more. Size 10 and above wants a SAT encoding instead.
+
+## Reduction, child and generic-prover pipeline (round of November 26, 2026)
+
+Everything lives in [reduction-pipeline/](reduction-pipeline/). The scripts expect the proof checkout at `C:\Users\leona\projects\pequalnp-proofs` and keep their working files in its ignored `.pnp/` directory (`.pnp/tools`, `.pnp/scratch`, `.pnp/gen`, `.pnp/batch`, `.pnp/size`). Adjust the paths at the top of each script for another machine.
+
+**Lean kits**
+- `kit_or_only.lean`: OR-only circuits. Evaluation splits over a pointwise OR (`evalOr`, `splitEval`) and is monotone (`evalMono`, `mono`).
+- `kit_depbound.lean`: `boundE` (a fan-in-2 circuit whose output depends on a set E of inputs has ≥ |E| − 1 gates) and `ess_of_pair` (an iff characterization makes an input essential). The dependency machinery is adapted from upstream `L_meta_2135`.
+- `kit_generic.lean`: both kits plus `wires_prefix` (reading an input wire returns that input bit).
+
+**Generators**
+- `gen_generic.py <statement file> <outdir> <tag>`: emits candidate proofs for templates T1/T2/T3 (iff hypothesis) and T1b/T3b (`∃ x, eval ≠ F` conclusion). Hypotheses are found by `assumption` and witnesses by `decide`. Test any candidate with `lake env lean` before use.
+- `gen_size.py`: emits the size-split reduction plus its small-side child.
+- `make_red.sh`: emits the AND-split reduction. It skips statements over 1650 characters (`reduce-child` limit) and uses a binder-agnostic proof (`intros; apply h1 <;> assumption`).
+- `send_red.sh`: opens a size-split reduction PR from the `../pnp-red` worktree and arms its child.
+
+**Racing**
+- `splice_child.py`: puts a prepared child into the desk skeleton. It anchors on `theorem child_` and keeps every `set_option` line.
+- `fastprep.sh`: lease with `--proof-of`, splice, `tools/pnp.sh check`. No git; safe to run in parallel.
+- `fastsubmit.sh`: parks other untracked proof files, submits, restores. Holds a cross-process git lock in `.pnp/gitlock`. `DRY=1` stops just before `pnp.sh submit`.
+- `auto_children.py <targets.txt>`: polls the snapshot every 10 s for pre-proved children. It prepares all hits in parallel and submits each as soon as it checks, with done-state persisted in `.pnp/tools/auto_done.txt`. Targets lines read `name h2.txt child.lean HelperNamespace`, with repo-relative paths (Windows Python cannot open `/c/...`).
+- `auto_any.py <targets.txt>`: races *any* new posting that a template proves, checking locally before leasing. Its seen-list is persisted.
+- `harvest_loop.py`: saves the hypotheses of others' new reduction PRs and flags no-AND children, plus circuit-free ones `decide +kernel` already proves.
+- `triage.py`: bulk `decide +kernel` / `simp` / `norm_num` attempts over many statements.
+
+**Operating notes (Windows + Git Bash)**
+- Call Git Bash explicitly from Python (`C:/Program Files/Git/bin/bash.exe`): plain `bash` resolves to WSL.
+- Run the workers as persistent background processes writing logs, and have monitors only tail those logs.
+- Before trusting a change, run the end-to-end dry test: splice every armed child into a fake skeleton and build it, run two concurrent `lake build`s, and run `DRY=1 fastsubmit.sh` with three untracked files present.
+
+## pcx short refutations
+
+[pcx-sat/](pcx-sat/) has a SAT encoder for "PHP(m,n) has a resolution refutation with exactly D derived lines" (`enc.py`), a decoder with an independent re-check (`dec.py`), a lemma combiner (`combine.py`) and a Lean emitter in the merged `L_pcx_155` style (`emit.py`, `header.lean`). `example_php43_58lines.lean` is the checked 58-line PHP(4,3) proof. Pass `--modelalllits=true` to CaDiCaL 3.1. The 55-line searches ran 25–45 minutes without an answer.
+
+## SAT exact synthesis
+
+`../synth_sat.py` (in this folder's parent, `notes/contributor-tools/`) encodes fan-in-2 AND/OR/NOT synthesis for a truth table or a `Represents` relation, with care rows only. `SYM=1` adds majority-style symmetry breaking. It decodes the model and replays the circuit. `gen_hcs_lean.py` renders `HasCircuitSize` / `RepSizeAtMost` witnesses as Lean files proved by `decide +kernel`.

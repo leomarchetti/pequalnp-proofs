@@ -4,6 +4,38 @@
 
 The statuses are observations from the latest round. Use GitHub and the official desk for live state. A fork branch can exist without an upstream PR.
 
+## Round on November 26, 2026, 02:20–05:05 UTC (reductions, child races, generic provers)
+
+**Score: 7 PRs merged (6 reductions + 1 proof).** Only the proof counts for ranking, since reductions just create raceable children. 50 PRs opened in total; the final states as of 05:03 UTC are below.
+
+| Outcome | PRs |
+|---|---|
+| **Merged (7)** | Reductions (AND-gate split, no-AND side proved in advance): [17138 #22884](https://github.com/open-goat/pequalnp-proofs/pull/22884), [5995 #22896](https://github.com/open-goat/pequalnp-proofs/pull/22896), [17856 #22913](https://github.com/open-goat/pequalnp-proofs/pull/22913), [18378 #22961](https://github.com/open-goat/pequalnp-proofs/pull/22961), [8468 #22962](https://github.com/open-goat/pequalnp-proofs/pull/22962), [8494 #22963](https://github.com/open-goat/pequalnp-proofs/pull/22963). Proof: **[L-meta-18453 #22955](https://github.com/open-goat/pequalnp-proofs/pull/22955)**, the no-AND child of our 17856 reduction, first in line. |
+| **Lost child races (3)** | 18407, 18425, 18490: a competitor merged first. 18477 and 18481 were never sent, because of auto-submitter bugs (all fixed, see below). |
+| **Accepted, never merged (30 open)** | Every reduction we opened after 02:42 got an `ACCEPTED` checker comment and stayed open. That's 17 AND-splits and 11 size-splits, plus 18266 and 17848. A lone byte-identical resubmission ([#23298](https://github.com/open-goat/pequalnp-proofs/pull/23298), 17361) also did not merge after 18+ minutes. |
+| **Rejected (4, closed)** | 18207, 18276, 18057, 18467: `reduce-child`, a child hypothesis prints over 2000 characters. Statements near 1900 characters cannot be split. |
+| **Closed by us (4)** | 8897 (another reduction had already landed); 17361 (closed to resubmit as #23298); 17977 and 18475 (closed when we misread willakone's same-titled PRs as proofs; they were reductions, so this was our error). |
+
+**What we learned about the desk:**
+- **The merge path is one-shot.** Reductions the desk intake takes are merged 6–60 minutes after opening with **no checker comment**. PRs it does not take get `ACCEPTED` from the GitHub Actions checker about an hour later and then **stay open indefinitely**, for every author (lokyll-social has one 3+ hours old). Treat `ACCEPTED` as "not taken", not as a step towards merging.
+- **What we ruled out.** No documented per-author cap fits, nor any lease, title or body rule, nor "an author's earlier reductions must clear first" (both our timeline and lokyll's contradict it). Something per-author excluded ours after our 6th: possibly volume (about 35 reductions in bursts) or the ratio of reductions to merged proofs. Unresolved.
+- **The checker queue reached about 65 minutes at peak.** The PR-to-merge median for proofs is 7.6 minutes.
+- **Reduction children are raced within 1–2 minutes of posting.** The public snapshot regenerates only every 75–100 s for everyone, so speed is decided by our own pipeline.
+
+**Independent tracks:**
+- **Exact search on CaDiCaL** (installed in WSL with owner approval). Majority-7 at ≤19/≤18 gates: no answer in 50–90 minutes, and the 21-gate calibration run did not reproduce the desk's known circuit either, so the encoding is too weak. Circulant {0,1,3} (17166) is UNSAT at 8 and 9 gates. The 4×4 crown is UNSAT at 9, so it needs ≥10 gates and 17394 cannot come from 2·crown+1. All SAT jobs were stopped after the machine crash.
+- **`pcx` short refutations (subagent).** None found: PHP(4,3) stays at 58 lines against the 55 target. The SAT encoder and Lean emitter work; see [pcx-sat](contributor-tools/pcx-sat/). A hand line-count suggests 55 needs a structure other than the "hole is full" lemma scheme.
+- **Bulk `decide`/`simp` triage** of 245 finite gaps: 0 hits in about 170 attempts. Stopped as the lowest-yield lane.
+
+**Incidents.**
+- **The PC crashed** (bugcheck 0x154 UNEXPECTED_STORE_EXCEPTION) under heavy load: up to 16 SAT solvers plus several Lean processes. No files were lost. Since then the workers run as persistent processes, monitors only tail their logs, and done-state is persisted.
+- **Auto-submitter bugs, each found by a lost race or by an end-to-end test:**
+  - Python's `bash` resolved to WSL's bash;
+  - a doubled `L_` path prefix;
+  - the race check misread "no PR" (`null null`);
+  - the splicer anchored on the first `theorem` and dropped all but one `set_option`;
+  - monitor timeouts killed the workers themselves.
+
 ## Solo round on November 25–26, 2026 (exact search; no upstream PR)
 
 No upstream PR. Every constructive bound tested exhaustively turned out empty, and the gaps that were provable went to faster contributors. The search tools below are new and reusable. See [the tooling guide](contributor-tools/README.md#exact-small-circuit-search-round-of-november-2526-2026).

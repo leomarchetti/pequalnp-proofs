@@ -19,11 +19,11 @@ for l in prep.splitlines():
         imports.append(l)
 helpers = prep[prep.index('namespace ' + hns):prep.index('end ' + hns) + len('end ' + hns)]
 helpers = helpers.replace(hns, own_ns)
-thm_at = prep.index('\ntheorem ')
+thm_at = prep.index('\ntheorem child_')
 opts = ''
 pre = prep[:thm_at].rstrip().splitlines()
-if pre and pre[-1].startswith('set_option '):
-    opts = pre[-1] + '\n'
+while pre and pre[-1].startswith('set_option '):
+    opts = pre.pop() + '\n' + opts
 proof = prep[prep.index(':= by', thm_at) + len(':= by'):].replace(hns, own_ns)
 stmt_start = skel.index('theorem ' + full)
 stmt_end = skel.rindex(':= by')

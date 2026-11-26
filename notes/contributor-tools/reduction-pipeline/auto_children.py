@@ -44,7 +44,12 @@ def load(path, done):
 
 done = set()
 last = None
-say('started')
+import os
+DONE_FILE = '.pnp/tools/auto_done.txt'
+if os.path.exists(DONE_FILE):
+    for line in open(DONE_FILE, encoding='utf-8'):
+        if line.split(): done.add(line.split()[0])
+say('started; already handled:', len(done))
 while True:
     try:
         targets = load(sys.argv[1], done)
@@ -62,6 +67,9 @@ while True:
                 for name, (t, child, ns) in targets.items():
                     if n == t and name not in done:
                         done.add(name)
+                        # persist, so a restarted instance never re-handles this child
+                        with open(DONE_FILE, 'a', encoding='utf-8') as fd:
+                            fd.write(name + ' ' + g['id'] + '\n')
                         hits.append((name, g['id'], child, ns, g.get('pr_open')))
             for name, gid, child, ns, pr in hits:
                 say('POSTED', name, gid, 'pr_open=%s' % pr, last)

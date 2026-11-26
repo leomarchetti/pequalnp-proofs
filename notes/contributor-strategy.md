@@ -4,6 +4,37 @@
 
 This is a handoff for agents working from the `leomarchetti/pequalnp-proofs` fork. Pick a current gap and deliver one exact Lean file through the project desk. Measure a tactic by time to a checked Lean file, whether the desk still offered the gap, and the eventual upstream verdict. A computational witness, a local Lean pass, an open PR, and a merged proof are distinct milestones.
 
+## Next agent: start here (after the November 26 reduction round)
+
+1. **Restart the workers first.** Everything is in [reduction-pipeline](contributor-tools/reduction-pipeline/); the operating notes are in the tools README.
+   - `auto_any.py`: races any newly posted step that fits a generic template.
+   - `auto_children.py`: races children we pre-proved.
+   - `harvest_loop.py`: pre-proves children of others' open reductions.
+   - A verdict poller.
+   Run each as a persistent background process writing a log, and only *tail* the logs with monitors: a monitor timeout kills the command it runs.
+2. **Do not send more reductions until one of ours lands again.** Since 02:42 on Nov 26 every reduction of ours was "accepted, never merged" (30 open). Reductions also do not count for ranking. Only proofs do.
+3. **Proofs come from three places:**
+   - children of anyone's merged reductions, via the generic racer;
+   - one-off proofs of open steps where we have a real idea;
+   - "beat by one" ladders, which still need a stronger search (`pcx`, majority-7).
+4. **The race is about 1–2 minutes from posting,** and the snapshot lags up to 100 s for everyone. Our pipeline needs about 15–25 s of local check, then lease, splice, `pnp.sh check` and submit in about 35 s. Never lease with `--proof-of` before a local Lean check has passed.
+
+## What we learned on November 26
+
+- **Race-proof splits beat generic splits, in principle.** An AND-gate split's easy side is proved by anyone in 90 s (the OR-only split argument). A size split's small side, by contrast, needs a connectivity bound: the `DepKit`, adapted from `L_meta_2135`. Willakone's "output is an input wire" split has a trivially vacuous easy side, which they prove themselves before anyone else.
+- **Generic templates cover the shapes that recur:**
+
+  | Template | Shape |
+  |---|---|
+  | T1 / T1b | no-AND (with an iff characterization / with an `∃ x, eval ≠ F` conclusion) |
+  | T2 | small size |
+  | T3 / T3b | output is an input (same two conclusion forms) |
+
+  Each finds its witnesses with `decide`, so no per-gap data is needed. T3/T3b reproduced three real merged proofs (18759, 18779, 18771).
+- **The rest of the recent flow is bespoke.** About 60% of new child steps are structural lemmas over generic n, list or graph arguments, or synthesis claims with wire-value conditions. Templates do not pay there.
+- **The checker's `reduce-child` limit:** child statements must print in ≤ 2000 characters. Skip statements over about 1650 characters before splitting.
+- **Merge mechanics:** a PR without a checker comment was taken by the desk. An `ACCEPTED` comment means the PR was not taken, and such PRs did not merge in our observations.
+
 ## Calibration from upstream merges (November 26, 2026)
 
 - **Freshness beats planning.** Fresh gaps close within tens of minutes. Refresh the snapshot every ~15 minutes, or pull through `tools/pnp.sh next`. A plan built on a one-hour-old snapshot is mostly stale.

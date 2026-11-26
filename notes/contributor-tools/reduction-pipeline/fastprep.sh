@@ -6,7 +6,7 @@ set -u
 cd /c/Users/leona/projects/pequalnp-proofs || exit 1
 export PATH="$PWD/.pnp/windows-bin:$PATH"
 id="$1"; prep="$2"; ns="$3"; f="lean/PEqualNP/Outside/${id//-/_}.lean"
-S=C:/Users/leona/AppData/Local/Temp/claude/b63fcaaf61d06969/f0f3676f-665c-4227-874e-f942837d53ea/scratchpad
+S=/c/Users/leona/projects/pequalnp-proofs/.pnp/tools
 echo "[$(date -u +%T)] lease $id"
 timeout 90 bash tools/pnp.sh next --proof-of "$id" 2>&1 | grep -E "TERMS|error|No |not" | head -2
 [ -f "$f" ] || { echo "PREP_FAIL $id no skeleton"; exit 1; }
