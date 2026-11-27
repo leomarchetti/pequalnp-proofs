@@ -184,6 +184,7 @@ MIN_WEIGHT = 20                               # weight-1 steps get stood down un
 DESK_GAP = 7.0                                # join.txt: one desk request every few seconds at most. At 4 s (about
                                               # 627 calls an hour) the desk answered 429 with a one-hour pause.
 DESK_LOCK = threading.Lock(); DESK_LAST = [0.0]; DESK_PAUSED_UNTIL = [0.0]
+PAUSE_MARGIN = 120                            # seconds past the end of a desk pause before the next call
 FRESH = 300                                   # a step first seen this many seconds ago still counts as fresh
 BACKLOG = set()                               # steps queued before a restart: re-solved, but never fresh
 PR_HOUR_CAP = 400                            # GitHub refused PR creation after 500 in an hour
@@ -207,7 +208,14 @@ def desk_call(method, path, params):
             except Exception: body = {}
             if e.code == 429:
                 ra = int(body.get('retry_after_s') or e.headers.get('Retry-After') or 600)
-                DESK_PAUSED_UNTIL[0] = time.time() + ra
+                DESK_PAUSED_UNTIL[0] = time.time() + ra + PAUSE_MARGIN
+                # retry_after_s is rounded: one call 4 s before the real end renewed the pause for an hour. Use the
+                # exact "paused until <ISO time>" from the message when there is one, plus the margin.
+                m = re.search(r'paused until (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)', str(body))
+                if m:
+                    until = datetime.strptime(m.group(1), '%Y-%m-%dT%H:%M:%S').replace(tzinfo=timezone.utc).timestamp()
+                    DESK_PAUSED_UNTIL[0] = max(DESK_PAUSED_UNTIL[0], until + PAUSE_MARGIN)
+                ra = DESK_PAUSED_UNTIL[0] - time.time()
                 with open(DIR + '/desk_pause.txt', 'w') as f: f.write('%.0f' % DESK_PAUSED_UNTIL[0])   # survives a restart
                 say('desk answered 429; all desk calls paused for %d s: %s' % (ra, re.sub(r'[^ -~]', ' ', str(body.get('error') or body.get('say') or body))[:300]))
             return e.code, body
@@ -428,6 +436,30 @@ def solve_stream(steps, budget, par=8, nice=0):
 
 RETRY = []; RETRY_LOCK = threading.Lock()
 
+sys.path.insert(0, ROOT + '/.pnp/explore')
+try:
+    import bank as BANK          # answer bank: proven intervals and verified circuits per symmetry class
+except Exception:
+    BANK = None
+
+def bank_answer(st):
+    """('circuit', gates) | ('impossible', lb) | (None, None) from the answer bank, for rep, rsam and pair steps"""
+    if BANK is None: return None, None
+    mode = 'g' if st['allow'] else 'm'
+    try:
+        if st['kind'] in ('rep', 'rsam'):
+            kind, nl, hx = st['spec'].split(':')
+            n, m = int(nl), st['n'] - int(nl)
+            return BANK.lookup('rep', int(hx, 16), n, m, mode, st['s'])
+        if st['kind'] == 'pair':
+            n = st['n']
+            mask = sum(1 << (n * i + j) for i in range(n) for j in range(i, n)
+                       if any(r == ((1 << i) | (1 << j)) and want for r, want in st['rows']))
+            return BANK.lookup('pair', mask, n, n, mode, st['s'])
+    except Exception as e:
+        say(st['id'], 'bank lookup failed:', repr(e)[:120])
+    return None, None
+
 def batch(steps, budgets, sender, par=PAR_FAST, nice=0, retry_lane=False):
     """one stage per budget, each stage on the steps the last left UNKNOWN (short budgets first, so an easy step
     never waits behind a hard one)"""
@@ -435,7 +467,17 @@ def batch(steps, budgets, sender, par=PAR_FAST, nice=0, retry_lane=False):
     say('%s of %d (budgets %s s, %d at a time): %s' % ('retry batch' if retry_lane else 'batch', len(steps),
         '/'.join(map(str, budgets)), par, ' '.join(info)))
     threading.Thread(target=lambda: _safe(sender.fetch), daemon=True).start()
-    todo = list(steps)
+    todo = []
+    for st in steps:   # the bank first: a stored circuit is sent at once, a proven floor above the bound is skipped
+        ans, val = bank_answer(st)
+        if ans == 'circuit' and ok(st, [tuple(g) for g in val]):
+            say(st['id'], 'bank: circuit of %d gates (bound %d, weight %d)' % (len(val), st['s'], st['w']))
+            mark(st['id'], 'queued'); sender.put((st, [tuple(g) for g in val], 0))
+        elif ans == 'impossible':
+            mark(st['id'], 'unsat'); say(st['id'], 'bank: impossible at bound %d (proven floor %d)' % (st['s'], val))
+        else:
+            todo.append(st)
+    if not todo: return
     try:
         for i, budget in enumerate(budgets):
             last = i == len(budgets) - 1; left = []

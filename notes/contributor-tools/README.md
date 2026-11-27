@@ -196,6 +196,82 @@ The desk does not publish its counting rule. Our duplicates were being closed as
 
 **What the pauses cost.** About three hours without a single PR (19:10–22:51 UTC). That included the hour's queue of roughly 340 solved steps, which others proved meanwhile, and the waves of about 400 new steps that arrived from 21:53.
 
+## Answer bank and exact small-graph tables (November 26–27, 2026)
+
+`answer-bank/` holds exact circuit costs for every small graph up to symmetry, with a verified circuit for each, and a
+lookup the wave racer calls before solving anything.
+
+**Kinds and modes.**
+- **Grids (`rep`):** n×m bipartite graphs on the one-a-side promise. Wires 0..n−1 are rows and n..n+m−1 columns;
+  bit m·u + v is edge (u, v). Classes are taken up to row and column permutations, and transposition when n = m.
+  Covers the `Represents` and `RepSizeAtMost` steps.
+- **Pairs (`pair`):** n-vertex graphs, with optional single-vertex bits, on inputs with one or two vertices on.
+  Bit n·min + max, matching the pair-function steps. Classes are taken up to vertex permutations.
+- **Modes:** `g` (AND/OR/NOT, `FanInTwo`) and `m` (AND/OR, `Monotone2`). Each class keeps a proven interval [lb, ub] and
+  a circuit of size ub.
+- **Pair graphs with no AND/OR circuit:** if a single-vertex bit is true, every pair containing that vertex must be
+  true too, or no monotone circuit exists. Those are stored as [99, 99].
+
+**Files.**
+- **`bank.py`:**
+  - `rep_canon` and `pair_canon` compute the canonical form together with the permutation back.
+  - `relabel` and `rep_map` move a stored circuit onto the step's own wires.
+  - `lookup(kind, mask, n, m, mode, bound)` returns a circuit checked on every promise input, or "impossible" when
+    the bank's lb is above the bound, or nothing.
+  - Banks are reloaded whenever their file changes.
+- **`classes.py`, `classes2.py`:** class enumeration.
+  - Counts: 3×3: 26, 4×4: 192, 5×5: 3,014, 3×4: 87, 3×5: 190, 3×6: 386, 4×5: 1,053, 4×6: 3,250.
+  - Pairs: 544 classes for 5 vertices and 5,096 for 6. These are graphs with loops, matching A000666.
+- **`explore.py`:** the square-grid driver with the conjecture checks.
+  - It starts from a construction upper bound (rows grouped by their column sets, or columns by their row sets),
+    raises lb one size per round, parks jobs that time out, and gives longer budgets only to classes whose interval
+    still allows a counterexample.
+  - It now stores circuits.
+- **`explore2.py`:** the general builder for grids and pairs, which writes `bank_<kind>_<n>x<m>.json` directly.
+- **`fill_bank.py`:** turns a finished `explore.py` table into a bank. Circuits come from the table, the construction, or
+  one solver run at the known size.
+- **`check.py`:** the conjecture report for a table.
+- **In the racer:** `bank_answer()` runs before every solve. A banked circuit goes straight to the lease-and-send path, and
+  a proven floor above the bound marks the step impossible.
+
+**Checks.**
+- **Relabeling** was right on 200 random graphs: square and rectangular grids, transposes, and 6-vertex pairs.
+- **Every stored circuit** is re-verified on load.
+- **On 72 open 4×4 steps** the bank answered 63 as impossible, agreeing with the solver everywhere both had an answer.
+
+## The complement-gap and NOT-removal conjectures (L-meta-19037, 19158, 19159, 19385)
+
+The full working notes are in `answer-bank/proof_19037.md`. Everything below was proved on paper or computed by the
+solver; none of it is checked in Lean.
+
+- **The tables confirm the project's notes.**
+  - 3×3: the largest complement gap m(A) − m(Ā) is 2 = 2n − 4, and the largest NOT gap m(A) − g(A) is 1 = 2n − 5.
+  - 4×4: the gaps are 4 and 3, with no break possible for any class.
+  - 5×5, partial table: the largest proven gaps are 6 and 5, again exactly at the bounds.
+- **Duality bound: m(A) ≤ m(Ā) + 6n − 12.**
+  - Swap AND and OR in an optimal circuit for Ā, and feed it "some other row is on" in place of each row, and the
+    same for columns.
+  - Those wires cost 3n − 6 per side (L-meta-18924).
+  - This beats the checked transfer L-meta-18925, about 2·m(Ā) + 6n.
+- **Reduction for 19037.** Empty rows or columns of Ā are full in A and split off. So the claim reduces to graphs whose
+  complement touches every row and column.
+- **The extremes at 4×4 are partial matchings against their complements.** The complement of a k-cell matching is
+  the missed rows, plus the missed columns, plus a k×k crown.
+- **The crown is at most 4n − 5.**
+  - Merge each row with its column, x_i = r_i ∨ c_i, then take "at least two x's", 3n − 5 gates by suffix ORs.
+  - Verified for n = 3..8.
+  - So m(crown) − m(matching) ≤ 2n − 4 at every n, and the whole partial-matching family is capped at 2n − 4.
+  - The project already knew the 5×5 crown costs exactly 15 ("a checked row").
+- **How the claims connect: g(A) ≤ m(Ā) + 1** (one NOT on top). So 19158 implies the gap bound that 19385 tries to
+  break, and one graph with m(A) > m(Ā) + 2n − 4 would prove both 19159 and 19385.
+  - For the 5×5 crown, g = 10 (no circuit of 9 with NOT), so it is not that graph.
+- **The project's own candidate is the 5×5 crown less one cell.**
+  - L-meta-25467 asks for an AND/OR circuit of 14 gates; L-meta-25468 asks for one of 9 with NOT.
+  - One hour on 6 seeds found no 14-gate AND/OR circuit and no proof that none exists. Every hand construction gives
+    15.
+  - A pure threshold over merged row-and-column "units" cannot work for this graph: the needed "same unit" relation
+    is not transitive. So a 14-gate circuit would need a different idea.
+
 ## The `L_meta_1673` search engine lane, and an alert for it (November 26, 2026)
 
 Trey Kind's `L_meta_1673` (PR 6929, Apache-2.0: credit it when you copy it) is a search engine that Lean's kernel checks. It proves circuit lower bounds for small functions. By November 26, 214 proofs on main copied it: 120 from one contributor, the rest from about a dozen others.
